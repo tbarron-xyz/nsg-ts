@@ -105,10 +105,10 @@ const checkRun = (incrBy: number, el: number) => {
 const updateGenerators = () => {
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
     // updateStateElement(state.numericalMonoid.frobenius() + 1);
-    updateStateElement(state.numericalMonoid._catenaryBoundHypothesis());
-    (<HTMLInputElement>document.getElementById('forall-axis1')).value = checkRun(Math.min(...state.numericalMonoid.generators), state.numericalMonoid._catenaryBoundHypothesis()).toString();
-    (<HTMLInputElement>document.getElementById('forall-axis1and2')).value = checkRun(getValueOfInput(1) *  getValueOfInput(2), state.numericalMonoid._catenaryBoundHypothesis()).toString();
-    (<HTMLInputElement>document.getElementById('betti')).value = JSON.stringify(state.numericalMonoid.bettiElements());
+    // updateStateElement(state.numericalMonoid._catenaryBoundHypothesis());
+    // (<HTMLInputElement>document.getElementById('forall-axis1')).value = checkRun(Math.min(...state.numericalMonoid.generators), state.numericalMonoid._catenaryBoundHypothesis()).toString();
+    // (<HTMLInputElement>document.getElementById('forall-axis1and2')).value = checkRun(getValueOfInput(1) *  getValueOfInput(2), state.numericalMonoid._catenaryBoundHypothesis()).toString();
+    // (<HTMLInputElement>document.getElementById('betti')).value = JSON.stringify(state.numericalMonoid.bettiElements());
     renderPlotly();
 }
 
@@ -116,7 +116,7 @@ const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentEleme
     return currentElement + (up ? 1 : -1) * getValueOfInput(generatorIndex);
 }
 
-const facsMap = (factorizations, color) => {
+const facsMap = (factorizations: Factorization[], color: string) => {
     return {
         x: factorizations.map(x => x[0]),
         y: factorizations.map(x => x[1]),
@@ -148,7 +148,7 @@ const renderPlotly = (explode = false) => {
             factorizations.map(y => y.map(
                 upByLcmOverG(i, lcm, g))));   // make 3 sets, each exploded upward in the ith direction
         [trace1, trace2, trace3] = exploded.map((x, i) => facsMap(x, colorMap(i)));
-        const maxnonredTraces = [];
+        // const maxnonredTraces = [];
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const distances = MST.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
@@ -200,15 +200,16 @@ const renderPlotly = (explode = false) => {
         } catch (e) {
             0;
         }
-        Plotly.newPlot('plotly-container', [trace1, trace2, trace3, ...maxnonredTraces, ...minimalMSTTraces], layout);
-
+        Plotly.newPlot('plotly-container', [trace1, trace2, trace3, 
+            // ...maxnonredTraces, 
+            ...minimalMSTTraces], layout);
     } else {
         const factorizations = state.numericalMonoid.factorizations(state.element);
         trace1 = facsMap(factorizations, 'rgba(217, 217, 217, 0.14)');
 
         // const maxnonred = maxnonredFunction(state.numericalMonoid, state.useEuclidean)(state.element);
-        const maxnonredTraces =
-            [];
+        // const maxnonredTraces =
+        //     [];
         // maxnonred.map(pair => {
         //     const pairWithMaybeGCDMidpoint = state.useEuclidean ? pair : [pair[0], tupleGCD(pair[0], pair[1]), pair[1]];
         //     return {
@@ -265,6 +266,8 @@ const renderPlotly = (explode = false) => {
         } catch (e) {
             0;
         }
-        Plotly.newPlot('plotly-container', [trace1, ...maxnonredTraces, ...minimalMSTTraces], layout);
+        Plotly.newPlot('plotly-container', [trace1, 
+            // ...maxnonredTraces, 
+            ...minimalMSTTraces], layout);
     }
 }
