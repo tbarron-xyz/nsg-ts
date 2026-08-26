@@ -140,20 +140,20 @@ const upByLcmOverG = (i, lcm, g) => (z, j) => j == i ? (z + lcm / g) : z;
 const upByG = (i, lcm, g) => (z, j) => z + g;
 
 const renderPlotly = (explode = false) => {
-    let trace1 = {}, trace2 = {}, trace3 = {};
+    let data: any[];
+    let layout: any;
+
     if (explode) {
         const factorizations = state.numericalMonoid.factorizations(state.element);
         const lcm = product(state.numericalMonoid.generators);
         const exploded: Factorization[][] = state.numericalMonoid.generators.map((g, i) =>
             factorizations.map(y => y.map(
-                upByLcmOverG(i, lcm, g))));   // make 3 sets, each exploded upward in the ith direction
-        [trace1, trace2, trace3] = exploded.map((x, i) => facsMap(x, colorMap(i)));
-        // const maxnonredTraces = [];
+                upByLcmOverG(i, lcm, g))));
+        const traces = exploded.map((x, i) => facsMap(x, colorMap(i)));
+
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
-        const distances = MST.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
-        const minDistance = Math.min(...distances);
-        const minEdges = MST;//.filter((pair, index) => distances[index] === minDistance);
+        const minEdges = MST;
         let minimalMSTTraces = [];
         let aggregateGlobalAxisMax = 0;
         exploded.forEach((explodee, i) => {
@@ -177,97 +177,51 @@ const renderPlotly = (explode = false) => {
             aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, globalAxisMax);
         });
         const axisLayout = { range: [0, aggregateGlobalAxisMax] };
-        const layout = {
+        layout = {
             scene: {
                 aspectmode: "manual",
-                aspectratio: {
-                    x: 1, y: 1, z: 1,
-                },
-                margin: {
-                    l: 0,
-                    r: 0,
-                    b: 0,
-                    t: 0
-                },
+                aspectratio: { x: 1, y: 1, z: 1 },
+                margin: { l: 0, r: 0, b: 0, t: 0 },
                 xaxis: axisLayout,
                 yaxis: axisLayout,
                 zaxis: axisLayout
             }
         };
-
-        try {
-            Plotly.purge('plotly-container');
-        } catch (e) {
-            0;
-        }
-        Plotly.newPlot('plotly-container', [trace1, trace2, trace3, 
-            // ...maxnonredTraces, 
-            ...minimalMSTTraces], layout);
+        data = [...traces, ...minimalMSTTraces];
     } else {
         const factorizations = state.numericalMonoid.factorizations(state.element);
-        trace1 = facsMap(factorizations, 'rgba(217, 217, 217, 0.14)');
-
-        // const maxnonred = maxnonredFunction(state.numericalMonoid, state.useEuclidean)(state.element);
-        // const maxnonredTraces =
-        //     [];
-        // maxnonred.map(pair => {
-        //     const pairWithMaybeGCDMidpoint = state.useEuclidean ? pair : [pair[0], tupleGCD(pair[0], pair[1]), pair[1]];
-        //     return {
-        //         x: pairWithMaybeGCDMidpoint.map(x => x[0]),
-        //         y: pairWithMaybeGCDMidpoint.map(x => x[1]),
-        //         z: pairWithMaybeGCDMidpoint.map(x => x[2]),
-        //         mode: 'lines',
-        //         type: 'scatter3d'
-        //     }
-        // });
+        const trace1 = facsMap(factorizations, 'rgba(217, 217, 217, 0.14)');
 
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
-        const distances = MST.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
-        const minDistance = Math.min(...distances);
-        const minEdges = MST;//.filter((pair, index) => distances[index] === minDistance);
+        const minEdges = MST;
         const minimalMSTTraces = minEdges.map((indexPair) => ({
             x: indexPair.map(x => factorizations[x][0]),
             y: indexPair.map(x => factorizations[x][1]),
             z: indexPair.map(x => factorizations[x][2]),
             mode: 'lines',
-            // marker: {
-            //     size: 12,
-            //     line: {
-            //         color: 'rgba(217, 217, 217, 0.14)',
-            //         width: 0.5
-            //     },
-            //     opacity: 0.8
-            // },
             type: 'scatter3d'
         }));
         const arrayOfFactorizationComponents = flattenArray([0, 1, 2].map(x => factorizations.map(fac => fac[x])));
         const globalAxisMax = Math.max(...arrayOfFactorizationComponents);
         const axisLayout = { range: [0, globalAxisMax] };
-        const layout = {
+        layout = {
             scene: {
                 aspectmode: "manual",
-                aspectratio: {
-                    x: 1, y: 1, z: 1,
-                },
-                margin: {
-                    l: 0,
-                    r: 0,
-                    b: 0,
-                    t: 0
-                },
+                aspectratio: { x: 1, y: 1, z: 1 },
+                margin: { l: 0, r: 0, b: 0, t: 0 },
                 xaxis: axisLayout,
                 yaxis: axisLayout,
                 zaxis: axisLayout
             }
         };
-        try {
-            Plotly.purge('plotly-container');
-        } catch (e) {
-            0;
-        }
-        Plotly.newPlot('plotly-container', [trace1, 
-            // ...maxnonredTraces, 
-            ...minimalMSTTraces], layout);
+        data = [trace1, ...minimalMSTTraces];
+    }
+
+    const container = document.getElementById('plotly-container') as any;
+    if (container && container._fullLayout) {
+        Plotly.react('plotly-container', data, layout);
+    } else {
+        Plotly.newPlot('plotly-container', data, layout);
     }
 }
