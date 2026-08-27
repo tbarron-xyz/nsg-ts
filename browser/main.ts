@@ -5,7 +5,7 @@ import { tupleGCD, flattenArray, euclideanDistance, product } from '../utils';
 declare var Plotly;
 
 window.onload = () => {
-    [1, 2, 3].map(x => getInput(x)).forEach(x => {
+    [1, 2, 3, 4].map(x => getInput(x)).forEach(x => {
         x.onchange = updateGenerators;
     });
     document.getElementById('element-input').onchange = e => {
@@ -20,9 +20,6 @@ window.onload = () => {
     }
     document.getElementById('explode-button').onclick = e => {
         updateStateElement(state.element, true);
-    }
-    document.getElementById('counterexample').onclick = e => {
-        updateStateElement(counterexample);
     }
 
     const applyMoveElement = (x: number, b: boolean) => updateStateElement(moveUpOrDownByElement(x, b, state.element));
@@ -45,6 +42,12 @@ window.onload = () => {
                 break;
             case 'c':
                 applyMoveElement(3, false);
+                break;
+            case 'f':
+                if (fourthGeneratorActive()) applyMoveElement(4, true);
+                break;
+            case 'v':
+                if (fourthGeneratorActive()) applyMoveElement(4, false);
                 break;
             default:
                 return;
@@ -86,29 +89,14 @@ const getInput = (id: number) => <HTMLInputElement>document.getElementById(`inpu
 
 const getValueOfInput = (id: number) => parseInt(getInput(id).value);
 
-const numericalMonoidOfCurrentInputs = () => new NumericalMonoid([getValueOfInput(1), getValueOfInput(2), getValueOfInput(3)]);
+const fourthGeneratorActive = () => getInput(4).value.trim() !== '' && !isNaN(getValueOfInput(4));
 
-let counterexample;
-const checkRun = (incrBy: number, el: number) => {
-        const bound = el + getValueOfInput(1) * getValueOfInput(2)
-        const catAtHypothesis = catenaryFunction(state.numericalMonoid, state.useEuclidean)(el)
-        for (let i = el; i < bound; i += incrBy) {
-            console.log(i);
-            if (catenaryFunction(state.numericalMonoid, state.useEuclidean)(i) != catAtHypothesis) {
-                counterexample = i;
-                return false
-            }
-        }
-        return true
-}
+const numericalMonoidOfCurrentInputs = () => new NumericalMonoid(fourthGeneratorActive()
+    ? [getValueOfInput(1), getValueOfInput(2), getValueOfInput(3), getValueOfInput(4)]
+    : [getValueOfInput(1), getValueOfInput(2), getValueOfInput(3)]);
 
 const updateGenerators = () => {
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
-    // updateStateElement(state.numericalMonoid.frobenius() + 1);
-    // updateStateElement(state.numericalMonoid._catenaryBoundHypothesis());
-    // (<HTMLInputElement>document.getElementById('forall-axis1')).value = checkRun(Math.min(...state.numericalMonoid.generators), state.numericalMonoid._catenaryBoundHypothesis()).toString();
-    // (<HTMLInputElement>document.getElementById('forall-axis1and2')).value = checkRun(getValueOfInput(1) *  getValueOfInput(2), state.numericalMonoid._catenaryBoundHypothesis()).toString();
-    // (<HTMLInputElement>document.getElementById('betti')).value = JSON.stringify(state.numericalMonoid.bettiElements());
     renderPlotly();
 }
 
@@ -116,11 +104,76 @@ const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentEleme
     return currentElement + (up ? 1 : -1) * getValueOfInput(generatorIndex);
 }
 
-const facsMap = (factorizations: Factorization[], color: string) => {
+/**
+ * Create a 4D -> 3D isometric projection for
+ *
+ *     a*x + b*y + c*z + d*t = n
+ *
+ * The returned function maps a solution [x,y,z,t] to [X,Y,Z].
+ *
+ * Distances between points are preserved exactly.
+ */
+function makeDisplayMapper([a, b, c, d]: number[], n = 1) {
+  // Orthonormal basis vectors for the hyperplane
+  // a*x + b*y + c*z + d*t = 0
+
+  const ab2 = a * a + b * b;
+  const abc2 = ab2 + c * c;
+  const ab = Math.sqrt(ab2);
+  const abc = Math.sqrt(abc2);
+  const N = Math.sqrt(abc2 + d * d);
+
+  const e1 = [
+    b / ab,
+    -a / ab,
+    0,
+    0
+  ];
+
+  const e2 = [
+    a * c / (ab * abc),
+    b * c / (ab * abc),
+    -ab2 / (ab * abc),
+    0
+  ];
+
+  const e3 = [
+    a * d / (N * abc),
+    b * d / (N * abc),
+    c * d / (N * abc),
+    -abc2 / (N * abc)
+  ];
+
+  return function ([x, y, z, t]: number[]) {
+    return [
+      x * e1[0] + y * e1[1] + z * e1[2] + t * e1[3],
+      x * e2[0] + y * e2[1] + z * e2[2] + t * e2[3],
+      x * e3[0] + y * e3[1] + z * e3[2] + t * e3[3]
+    ];
+  };
+}
+
+const projectFactorization = (fac: Factorization, element: number, generators: number[], collapse3: boolean = false): Factorization => {
+    if (generators.length === 3) return [fac[0], fac[1], collapse3 ? 0 : fac[2]];
+    if (element === 0) return [0, 0, 0];
+    return makeDisplayMapper(generators)(fac);
+    // return [fac[1] * generators[1] / element, fac[2] * generators[2] / element, fac[3] * generators[3] / element];
+}
+
+const axisMins = (projected: number[][]) => [0, 1, 2].map(i => Math.min(0, ...projected.map(p => p[i])));
+
+const applyShift = (projected: number[][], mins: number[]) =>
+    projected.map(p => [p[0] - mins[0], p[1] - mins[1], p[2] - mins[2]]);
+
+const facText = (fac: Factorization) => '(' + fac.join(', ') + ')';
+
+const facsMap = (projected: number[][], color: string, text: string[]) => {
     return {
-        x: factorizations.map(x => x[0]),
-        y: factorizations.map(x => x[1]),
-        z: factorizations.map(x => x[2]),
+        x: projected.map(x => x[0]),
+        y: projected.map(x => x[1]),
+        z: projected.map(x => x[2]),
+        text: text,
+        hovertemplate: '%{text}<extra></extra>',
         mode: 'markers',
         marker: {
             size: 5,
@@ -134,7 +187,7 @@ const facsMap = (factorizations: Factorization[], color: string) => {
     };
 }
 
-const colorMap = i => i == 0 ? "red" : i == 1 ? "blue" : "green";
+const colorMap = i => i == 0 ? "red" : i == 1 ? "blue" : i == 2 ? "green" : "purple";
 
 const upByLcmOverG = (i, lcm, g) => (z, j) => j == i ? (z + lcm / g) : z;
 const upByG = (i, lcm, g) => (z, j) => z + g;
@@ -145,22 +198,28 @@ const renderPlotly = (explode = false) => {
 
     if (explode) {
         const factorizations = state.numericalMonoid.factorizations(state.element);
-        const lcm = product(state.numericalMonoid.generators);
-        const exploded: Factorization[][] = state.numericalMonoid.generators.map((g, i) =>
+        const element = state.element;
+        const generators = state.numericalMonoid.generators;
+        const lcm = product(generators);
+        const exploded: Factorization[][] = generators.map((g, i) =>
             factorizations.map(y => y.map(
                 upByLcmOverG(i, lcm, g))));
-        const traces = exploded.map((x, i) => facsMap(x, colorMap(i)));
+        const explodedProjected: number[][][] = exploded.map(explodee =>
+            explodee.map(fac => projectFactorization(fac, element, generators)));
+        const mins = axisMins(flattenArray(explodedProjected));
+        const explodedDisplay = explodedProjected.map(projected => applyShift(projected, mins));
+        const traces = explodedDisplay.map((display, i) => facsMap(display, colorMap(i), factorizations.map(facText)));
 
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         let minimalMSTTraces = [];
         let aggregateGlobalAxisMax = 0;
-        exploded.forEach((explodee, i) => {
+        explodedDisplay.forEach((display, i) => {
             minimalMSTTraces = minimalMSTTraces.concat(minEdges.map((indexPair) => ({
-                x: indexPair.map(x => explodee[x][0]),
-                y: indexPair.map(x => explodee[x][1]),
-                z: indexPair.map(x => explodee[x][2]),
+                x: indexPair.map(x => display[x][0]),
+                y: indexPair.map(x => display[x][1]),
+                z: indexPair.map(x => display[x][2]),
                 mode: 'lines',
                 marker: {
                     size: 11,
@@ -172,9 +231,7 @@ const renderPlotly = (explode = false) => {
                 },
                 type: 'scatter3d'
             })));
-            const arrayOfFactorizationComponents = flattenArray([0, 1, 2].map(x => explodee.map(fac => fac[x])));
-            const globalAxisMax = Math.max(...arrayOfFactorizationComponents);
-            aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, globalAxisMax);
+            aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, ...flattenArray(display));
         });
         const axisLayout = { range: [0, aggregateGlobalAxisMax] };
         layout = {
@@ -190,22 +247,26 @@ const renderPlotly = (explode = false) => {
         data = [...traces, ...minimalMSTTraces];
     } else {
         const factorizations = state.numericalMonoid.factorizations(state.element);
-        const trace1 = facsMap(factorizations, 'rgba(217, 217, 217, 0.14)');
+        const element = state.element;
+        const generators = state.numericalMonoid.generators;
+        const projected = factorizations.map(fac => projectFactorization(fac, element, generators, (document.getElementById("collapse3-checkbox") as any).checked));
+        const display = applyShift(projected, axisMins(projected));
+        const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
 
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         const minimalMSTTraces = minEdges.map((indexPair) => ({
-            x: indexPair.map(x => factorizations[x][0]),
-            y: indexPair.map(x => factorizations[x][1]),
-            z: indexPair.map(x => factorizations[x][2]),
+            x: indexPair.map(x => display[x][0]),
+            y: indexPair.map(x => display[x][1]),
+            z: indexPair.map(x => display[x][2]),
             mode: 'lines',
             type: 'scatter3d'
         }));
-        const arrayOfFactorizationComponents = flattenArray([0, 1, 2].map(x => factorizations.map(fac => fac[x])));
-        const globalAxisMax = Math.max(...arrayOfFactorizationComponents);
+        const globalAxisMax = Math.max(0, ...flattenArray(display));
         const axisLayout = { range: [0, globalAxisMax] };
         layout = {
+            uirevision: 'true', // Keep this value constant on updates
             scene: {
                 aspectmode: "manual",
                 aspectratio: { x: 1, y: 1, z: 1 },
@@ -220,6 +281,10 @@ const renderPlotly = (explode = false) => {
 
     const container = document.getElementById('plotly-container') as any;
     if (container && container._fullLayout) {
+        const currentCamera = container._fullLayout.scene && container._fullLayout.scene.camera;
+        if (currentCamera) {
+            layout.scene.camera = currentCamera;
+        }
         Plotly.react('plotly-container', data, layout);
     } else {
         Plotly.newPlot('plotly-container', data, layout);

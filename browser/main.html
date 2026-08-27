@@ -21,6 +21,7 @@
             <input type="text" id="input1" value="9" />
             <input type="text" id="input2" value="43" />
             <input type="text" id="input3" value="47" />
+            <input type="text" id="input4" />
         </div>
         <div>
             Element
@@ -29,20 +30,19 @@
         </br>
             Satisfies along i, i+g_1, ..., i+g_1*g_2: <input disabled type="text" id="forall-axis1" />
             Satisfies along i, i+g_1*g_2, ..., i+LCM: <input disabled type="text" id="forall-axis1and2" />
-            <button id="counterexample">Go to counterexample</button>
+
             <br/>
-            Betti elements: <input disabled type="text" id="betti" />
-
-
             
         </div>
         <div>
             <input type="checkbox" id="euclidean-checkbox" /> Use Euclidean (checked) vs classical (unchecked)
             <br/>
+            <input type="checkbox" id="collapse3-checkbox" /> Collapse 3rd dim
+            <br/>
             <input type="button" id="explode-button">Explode</input>
         </div>
         <div>
-            Controls: a/z, s/x, d/c = up/down by generator 1, 2, 3
+            Controls: a/z, s/x, d/c, f/v = up/down by generator 1, 2, 3, 4
         </div>
         <div style="width: 100%; height: 80%;" id="plotly-container">
         
