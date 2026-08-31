@@ -18,6 +18,9 @@ window.onload = () => {
     document.getElementById('euclidean-checkbox').onchange = e => {
         updateEuclideanCheckbox((<HTMLInputElement>e.target).checked);
     }
+    document.getElementById('collapse3-checkbox').onchange = e => {
+        renderPlotly();
+    }
     document.getElementById('explode-button').onclick = e => {
         updateStateElement(state.element, true);
     }
