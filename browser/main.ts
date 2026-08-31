@@ -54,7 +54,10 @@ window.onload = () => {
         }
     }
 
-    updateGenerators();
+    readStateFromHash();
+    (<HTMLInputElement>document.getElementById('euclidean-checkbox')).checked = state.useEuclidean;
+    state.numericalMonoid = numericalMonoidOfCurrentInputs();
+    updateStateElement(state.element);
 }
 
 const updateStateElement = (element: number, explode = false) => {
@@ -62,6 +65,21 @@ const updateStateElement = (element: number, explode = false) => {
     (<HTMLInputElement>document.getElementById('element-input')).value = element.toString();
     (<HTMLInputElement>document.getElementById('catenary-input')).value = catenaryFunction(state.numericalMonoid, state.useEuclidean)(element).toString();
     renderPlotly(explode);
+    persistStateToHash();
+}
+
+const persistStateToHash = () => {
+    const params = new URLSearchParams();
+    params.set('element', state.element.toString());
+    if (state.useEuclidean) params.set('euclidean', '1');
+    history.replaceState(null, '', `#${params.toString()}`);
+}
+
+const readStateFromHash = () => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const element = parseInt(params.get('element'));
+    if (!isNaN(element)) state.element = element;
+    state.useEuclidean = params.get('euclidean') === '1';
 }
 
 const updateEuclideanCheckbox = (useEuclidean: boolean) => {
@@ -169,6 +187,7 @@ const facText = (fac: Factorization) => '(' + fac.join(', ') + ')';
 
 const facsMap = (projected: number[][], color: string, text: string[]) => {
     return {
+        showlegend: false,
         x: projected.map(x => x[0]),
         y: projected.map(x => x[1]),
         z: projected.map(x => x[2]),
@@ -188,6 +207,48 @@ const facsMap = (projected: number[][], color: string, text: string[]) => {
 }
 
 const colorMap = i => i == 0 ? "red" : i == 1 ? "blue" : i == 2 ? "green" : "purple";
+
+const roundWeight = (w: number) => Math.round(w * 1e9) / 1e9;
+
+/**
+ * Group edges into one Plotly trace per distinct distance (measured with the
+ * selected metric, classic or euclidean), instead of one anonymous trace per edge.
+ * All segments of equal length are merged into a single scatter3d lines trace
+ * (nulls separate the segments), named `d = <distance>`, so the legend reads
+ * distances rather than "trace 0", "trace 1", ...
+ * Expects edges in Kruskal order (ascending weight); groups preserve that order.
+ */
+const groupedEdgeTracesByDistance = (
+    edges: [number, number][],
+    weights: number[],
+    display: number[][],
+    extraProps: any = {},
+) => {
+    const groups: { weight: number, edges: [number, number][] }[] = [];
+    edges.forEach((edge, i) => {
+        const weight = roundWeight(weights[i]);
+        const group = groups.find(g => g.weight === weight);
+        if (group) group.edges.push(edge);
+        else groups.push({ weight: weight, edges: [edge] });
+    });
+    return groups.map(group => {
+        const coord = (dim: number) => group.edges.reduce((acc: number[], edge, i) => {
+            const start = display[edge[0]][dim];
+            const end = display[edge[1]][dim];
+            return i === 0 ? acc.concat([start, end]) : acc.concat([null, start, end]);
+        }, []);
+        return Object.assign({
+            name: `d = ${Math.round(group.weight * 100) / 100}`,
+            legendgroup: String(group.weight),
+            showlegend: true,
+            x: coord(0),
+            y: coord(1),
+            z: coord(2),
+            mode: 'lines',
+            type: 'scatter3d'
+        }, extraProps);
+    });
+};
 
 const upByLcmOverG = (i, lcm, g) => (z, j) => j == i ? (z + lcm / g) : z;
 const upByG = (i, lcm, g) => (z, j) => z + g;
@@ -213,14 +274,12 @@ const renderPlotly = (explode = false) => {
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
+        const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
         let minimalMSTTraces = [];
         let aggregateGlobalAxisMax = 0;
         explodedDisplay.forEach((display, i) => {
-            minimalMSTTraces = minimalMSTTraces.concat(minEdges.map((indexPair) => ({
-                x: indexPair.map(x => display[x][0]),
-                y: indexPair.map(x => display[x][1]),
-                z: indexPair.map(x => display[x][2]),
-                mode: 'lines',
+            minimalMSTTraces = minimalMSTTraces.concat(groupedEdgeTracesByDistance(minEdges, distances, display, {
+                showlegend: i === 0,
                 marker: {
                     size: 11,
                     line: {
@@ -228,9 +287,8 @@ const renderPlotly = (explode = false) => {
                         width: 0.5
                     },
                     opacity: 0.8
-                },
-                type: 'scatter3d'
-            })));
+                }
+            }));
             aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, ...flattenArray(display));
         });
         const axisLayout = { range: [0, aggregateGlobalAxisMax] };
@@ -256,13 +314,8 @@ const renderPlotly = (explode = false) => {
         const metric = metricFunction(state.useEuclidean);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
-        const minimalMSTTraces = minEdges.map((indexPair) => ({
-            x: indexPair.map(x => display[x][0]),
-            y: indexPair.map(x => display[x][1]),
-            z: indexPair.map(x => display[x][2]),
-            mode: 'lines',
-            type: 'scatter3d'
-        }));
+        const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+        const minimalMSTTraces = groupedEdgeTracesByDistance(minEdges, distances, display);
         const globalAxisMax = Math.max(0, ...flattenArray(display));
         const axisLayout = { range: [0, globalAxisMax] };
         layout = {
