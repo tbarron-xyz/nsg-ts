@@ -65,18 +65,17 @@ const updateStateElement = (element: number, explode = false) => {
     (<HTMLInputElement>document.getElementById('element-input')).value = element.toString();
     (<HTMLInputElement>document.getElementById('catenary-input')).value = catenaryFunction(state.numericalMonoid, state.useEuclidean)(element).toString();
     renderPlotly(explode);
+    renderCatenaryTable();
     persistStateToHash();
 }
 
 const persistStateToHash = () => {
-    const params = new URLSearchParams();
-    params.set('element', state.element.toString());
-    if (state.useEuclidean) params.set('euclidean', '1');
-    params.set('g1', getValueOfInput(1).toString());
-    params.set('g2', getValueOfInput(2).toString());
-    params.set('g3', getValueOfInput(3).toString());
-    if (fourthGeneratorActive()) params.set('g4', getValueOfInput(4).toString());
-    history.replaceState(null, '', `#${params.toString()}`);
+    const params = [
+        `element=${state.element}`,
+        state.useEuclidean ? 'euclidean=1' : '',
+        `gens=${currentGenerators().join(',')}`,
+    ].filter(x => x !== '').join('&');
+    history.replaceState(null, '', `#${params}`);
 }
 
 const readStateFromHash = () => {
@@ -84,10 +83,9 @@ const readStateFromHash = () => {
     const element = parseInt(params.get('element'));
     if (!isNaN(element)) state.element = element;
     state.useEuclidean = params.get('euclidean') === '1';
-    for (let i = 1; i <= 4; i++) {
-        const gen = parseInt(params.get(`g${i}`));
-        if (!isNaN(gen)) getInput(i).value = gen.toString();
-    }
+    (params.get('gens') || '').split(',').map(s => parseInt(s)).forEach((gen, i) => {
+        if (!isNaN(gen) && i < 4) getInput(i + 1).value = gen.toString();
+    });
 }
 
 const updateEuclideanCheckbox = (useEuclidean: boolean) => {
@@ -117,18 +115,62 @@ const getValueOfInput = (id: number) => parseInt(getInput(id).value);
 
 const fourthGeneratorActive = () => getInput(4).value.trim() !== '' && !isNaN(getValueOfInput(4));
 
-const numericalMonoidOfCurrentInputs = () => new NumericalMonoid(fourthGeneratorActive()
+const currentGenerators = () => fourthGeneratorActive()
     ? [getValueOfInput(1), getValueOfInput(2), getValueOfInput(3), getValueOfInput(4)]
-    : [getValueOfInput(1), getValueOfInput(2), getValueOfInput(3)]);
+    : [getValueOfInput(1), getValueOfInput(2), getValueOfInput(3)];
+
+const numericalMonoidOfCurrentInputs = () => new NumericalMonoid(currentGenerators());
 
 const updateGenerators = () => {
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
-    renderPlotly();
-    persistStateToHash();
+    updateStateElement(state.element);
 }
 
 const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentElement: number) => {
     return currentElement + (up ? 1 : -1) * getValueOfInput(generatorIndex);
+}
+
+const catenaryDegreePalette = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f'];
+
+const renderCatenaryTable = () => {
+    if (!state.numericalMonoid) return;
+    const element = state.element;
+    const generators = state.numericalMonoid.generators;
+    const minGen = Math.min(...generators);
+    const maxGen = Math.max(...generators);
+    const cat = catenaryFunction(state.numericalMonoid, state.useEuclidean);
+    const gridValues: (number | null)[][] = Array.from({ length: maxGen }, (_, r) =>
+        Array.from({ length: minGen }, (_, c) => {
+            const el = element + r * minGen + c * maxGen;
+            return state.numericalMonoid.hasElement(el) ? cat(el) : null;
+        }));
+    const distinctValues = <number[]>Array.from(new Set([].concat(...gridValues).filter(v => v !== null)))
+        .sort((a, b) => a - b);
+    const colorOfValue = new Map<number, string>();
+    distinctValues.forEach((v, i) => colorOfValue.set(v, catenaryDegreePalette[i % catenaryDegreePalette.length]));
+    const span = (text: string, color: string) => `<span style="color:${color}">${text}</span>`;
+    const pad = (text: string, width: number) => ' '.repeat(Math.max(0, width - text.length)) + text;
+    const cellText = (v: number | null) => v === null ? '-' : v.toString();
+    const headerRow = [''].concat(Array.from({ length: minGen }, (_, c) => (element + c * maxGen).toString()));
+    const rowLabel = (r: number) => (element + r * minGen).toString();
+    const labelWidth = Math.max(...Array.from({ length: maxGen }, (_, r) => rowLabel(r).length));
+    const columnWidths = headerRow.map((h, j) => j === 0
+        ? labelWidth
+        : Math.max(h.length, ...gridValues.map(row => cellText(row[j - 1]).length)));
+    const lines = [headerRow.map((h, j) => pad(h, columnWidths[j])).join('  ')];
+    gridValues.forEach((rowValues, r) => {
+        const cells = rowValues.map((v, c) => {
+            const text = pad(cellText(v), columnWidths[c + 1]);
+            return v === null ? text : span(text, colorOfValue.get(v));
+        });
+        lines.push([pad(rowLabel(r), labelWidth)].concat(cells).join('  '));
+    });
+    const legendEntries = distinctValues.map(v => span(v.toString(), colorOfValue.get(v)));
+    const legendLines = [];
+    for (let i = 0; i < legendEntries.length; i += 10) {
+        legendLines.push(legendEntries.slice(i, i + 10).join('  '));
+    }
+    (<HTMLPreElement>document.getElementById('catenary-table')).innerHTML = legendLines.concat(lines).join('\n');
 }
 
 /**
