@@ -72,6 +72,10 @@ const persistStateToHash = () => {
     const params = new URLSearchParams();
     params.set('element', state.element.toString());
     if (state.useEuclidean) params.set('euclidean', '1');
+    params.set('g1', getValueOfInput(1).toString());
+    params.set('g2', getValueOfInput(2).toString());
+    params.set('g3', getValueOfInput(3).toString());
+    if (fourthGeneratorActive()) params.set('g4', getValueOfInput(4).toString());
     history.replaceState(null, '', `#${params.toString()}`);
 }
 
@@ -80,6 +84,10 @@ const readStateFromHash = () => {
     const element = parseInt(params.get('element'));
     if (!isNaN(element)) state.element = element;
     state.useEuclidean = params.get('euclidean') === '1';
+    for (let i = 1; i <= 4; i++) {
+        const gen = parseInt(params.get(`g${i}`));
+        if (!isNaN(gen)) getInput(i).value = gen.toString();
+    }
 }
 
 const updateEuclideanCheckbox = (useEuclidean: boolean) => {
@@ -116,6 +124,7 @@ const numericalMonoidOfCurrentInputs = () => new NumericalMonoid(fourthGenerator
 const updateGenerators = () => {
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
     renderPlotly();
+    persistStateToHash();
 }
 
 const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentElement: number) => {
