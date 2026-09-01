@@ -5,8 +5,7 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc && cd browser && tsc",
-    "build_old": "tsc --module commonjs --target es6 --lib es2016 main.ts",
+    "build": "tsc",
     "serve": "npx serve"
   },
   "repository": {
