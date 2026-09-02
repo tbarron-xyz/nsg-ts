@@ -1,7 +1,9 @@
 import NumericalMonoid, { Factorization } from '../NumericalMonoid';
-import { tupleGCD, flattenArray, euclideanDistance, product } from '../utils';
+import { tupleGCD, flattenArray, euclideanDistance, product, taxicabDistance } from '../utils';
 
 declare var Plotly;
+
+export enum MetricType { Classic = 0, Euclidean = 1, Taxicab = 2 }
 
 window.onload = () => {
     [1, 2, 3, 4].map(x => getInput(x)).forEach(x => {
@@ -14,17 +16,22 @@ window.onload = () => {
             console.error(e);
         }
     };
-    document.getElementById('euclidean-checkbox').onchange = e => {
-        updateEuclideanCheckbox((<HTMLInputElement>e.target).checked);
-    }
+    Array.from(<NodeListOf<HTMLInputElement>>document.querySelectorAll('input[name="metric"]')).forEach(radio => {
+        radio.onchange = e => {
+            updateMetric(parseInt((<HTMLInputElement>e.target).value));
+        }
+    });
     document.getElementById('collapse3-checkbox').onchange = e => {
         renderPlotly();
     }
-    document.getElementById('explode-button').onclick = e => {
-        updateStateElement(state.element, true);
+    document.getElementById("renderTable").onchange = e => {
+        renderPlotly();
     }
+    // document.getElementById('explode-button').onclick = e => {
+    //     updateStateElement(state.element, true);
+    // }
 
-    const applyMoveElement = (x: number, b: boolean) => updateStateElement(moveUpOrDownByElement(x, b, state.element));
+    const applyMoveElement = (genIndex: number, up: boolean) => updateStateElement(moveUpOrDownByElement(genIndex, up, state.element));
     document.onkeydown = (ev) => {
         switch (ev.key) {
             case 'a':
@@ -55,9 +62,17 @@ window.onload = () => {
                 return;
         }
     }
+    [1,2,3,4].map(i => {
+        document.getElementById(`up${i}`).onclick = e => {
+            applyMoveElement(i, true);
+        }
+        document.getElementById(`down${i}`).onclick = e => {
+            applyMoveElement(i, false);
+        }
+    })
 
     readStateFromHash();
-    (<HTMLInputElement>document.getElementById('euclidean-checkbox')).checked = state.useEuclidean;
+    (<HTMLInputElement>document.querySelector(`input[name="metric"][value="${state.metric}"]`)).checked = true;
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
     updateStateElement(state.element);
 }
@@ -65,7 +80,7 @@ window.onload = () => {
 const updateStateElement = (element: number, explode = false) => {
     state.element = element;
     (<HTMLInputElement>document.getElementById('element-input')).value = element.toString();
-    (<HTMLInputElement>document.getElementById('catenary-input')).value = catenaryFunction(state.numericalMonoid, state.useEuclidean)(element).toString();
+    (<HTMLInputElement>document.getElementById('catenary-input')).value = catenaryFunction(state.numericalMonoid, state.metric)(element).toString();
     renderPlotly(explode);
     renderCatenaryTable();
     persistStateToHash();
@@ -73,9 +88,9 @@ const updateStateElement = (element: number, explode = false) => {
 
 const persistStateToHash = () => {
     const params = [
-        `element=${state.element}`,
-        state.useEuclidean ? 'euclidean=1' : '',
         `gens=${currentGenerators().join(',')}`,
+        `element=${state.element}`,
+        state.metric !== MetricType.Classic ? `metric=${MetricType[state.metric].toLowerCase()}` : '',
     ].filter(x => x !== '').join('&');
     history.replaceState(null, '', `#${params}`);
 }
@@ -84,31 +99,41 @@ const readStateFromHash = () => {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const element = parseInt(params.get('element'));
     if (!isNaN(element)) state.element = element;
-    state.useEuclidean = params.get('euclidean') === '1';
+    const metricParam = params.get('metric');
+    if (metricParam === 'euclidean' || metricParam === 'taxicab') state.metric = metricParam === 'euclidean' ? MetricType.Euclidean : MetricType.Taxicab;
     (params.get('gens') || '').split(',').map(s => parseInt(s)).forEach((gen, i) => {
         if (!isNaN(gen) && i < 4) getInput(i + 1).value = gen.toString();
     });
 }
 
-const updateEuclideanCheckbox = (useEuclidean: boolean) => {
-    state.useEuclidean = useEuclidean;
+const updateMetric = (metric: MetricType) => {
+    state.metric = metric;
     updateStateElement(state.element);
 }
 
 // const maxnonredFunction = (nm: NumericalMonoid, useEuclidean: boolean) => (useEuclidean ? nm.maxnonreducibleEdgesEuclidean : nm.maxnonreducibleEdges).bind(nm);
-const catenaryFunction = (nm: NumericalMonoid, useEuclidean: boolean) =>
+const catenaryFunction = (nm: NumericalMonoid, metric: MetricType) =>
     (x: number) =>
-        nm.catenaryDegreeByMetric(x, metricFunction(useEuclidean));
-const metricFunction = (useEuclidean: boolean) => useEuclidean ? euclideanDistance : NumericalMonoid.distanceForClassicCatenary;
+        nm.catenaryDegreeByMetric(x, metricFunction(metric));
+const metricFunction = (metric: MetricType) => {
+    switch (metric) {
+        case MetricType.Euclidean:
+            return euclideanDistance;
+        case MetricType.Taxicab:
+            return taxicabDistance;
+        default:
+            return NumericalMonoid.distanceForClassicCatenary;
+    }
+}
 
 const state: {
     numericalMonoid: NumericalMonoid,
     element: number,
-    useEuclidean: boolean
+    metric: MetricType
 } = {
     numericalMonoid: null,
     element: 0,
-    useEuclidean: false
+    metric: MetricType.Classic
 };
 
 const getInput = (id: number) => <HTMLInputElement>document.getElementById(`input${id}`);
@@ -135,12 +160,12 @@ const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentEleme
 const catenaryDegreePalette = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f'];
 
 const renderCatenaryTable = () => {
-    if (!state.numericalMonoid) return;
+    if (!state.numericalMonoid || !(document.getElementById("renderTable") as HTMLInputElement).checked) return;
     const element = state.element;
     const generators = state.numericalMonoid.generators;
     const minGen = Math.min(...generators);
     const maxGen = Math.max(...generators);
-    const cat = catenaryFunction(state.numericalMonoid, state.useEuclidean);
+    const cat = catenaryFunction(state.numericalMonoid, state.metric);
     const gridValues: (number | null)[][] = Array.from({ length: maxGen }, (_, r) =>
         Array.from({ length: minGen }, (_, c) => {
             const el = element + r * minGen + c * maxGen;
@@ -324,7 +349,7 @@ const renderPlotly = (explode = false) => {
         const explodedDisplay = explodedProjected.map(projected => applyShift(projected, mins));
         const traces = explodedDisplay.map((display, i) => facsMap(display, colorMap(i), factorizations.map(facText)));
 
-        const metric = metricFunction(state.useEuclidean);
+        const metric = metricFunction(state.metric);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
@@ -364,7 +389,7 @@ const renderPlotly = (explode = false) => {
         const display = applyShift(projected, axisMins(projected));
         const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
 
-        const metric = metricFunction(state.useEuclidean);
+        const metric = metricFunction(state.metric);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));

@@ -27,21 +27,32 @@
             Element
             <input type="text" id="element-input" autocomplete="off" />
             Catenary degree: <input disabled type="text" id="catenary-input" />
-        </br>
+            </br>
+            <button id="up1">&uarr;g1</button>
+            <button id="down1">&darr;g1</button>
+            <button id="up2">&uarr;g2</button>
+            <button id="down2">&darr;g2</button>
+            <button id="up3">&uarr;g3</button>
+            <button id="down3">&darr;g3</button>
+            <button id="up4">&uarr;g4</button>
+            <button id="down4">&darr;g4</button>
         </div>
         <div>
-            <input type="checkbox" id="euclidean-checkbox" autocomplete="off" /> Use Euclidean (checked) vs classical (unchecked)
+            Metric:
+            <input type="radio" name="metric" value="0" checked autocomplete="off" /> Classical (max-taxicab-to-gcd)
+            <input type="radio" name="metric" value="1" autocomplete="off" /> Euclidean
+            <input type="radio" name="metric" value="2" autocomplete="off" /> Taxicab
             <br/>
             <input type="checkbox" id="collapse3-checkbox" /> Collapse 3rd dim
-            <br/>
-            <input type="button" id="explode-button">Explode</input>
+            <!-- <input type="button" id="explode-button">Explode</input> -->
         </div>
         <div>
-            Controls: a/z, s/x, d/c, f/v = up/down by generator 1, 2, 3, 4
+            Keyboard controls: a/z, s/x, d/c, f/v = up/down by generator 1, 2, 3, 4
         </div>
         <div style="width: 100%; height: 80%;" id="plotly-container">
 
         </div>
+        <input type="checkbox" id="renderTable" autocomplete="off" /> Render catenary table
         <pre id="catenary-table"></pre>
     </body>
 </html>

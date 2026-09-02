@@ -16,3 +16,5 @@ export const numberArrayEqualityCheck = (a: number[], b: number[]) => zeroThroug
 export const euclideanDistance = (fac1: number[], fac2: number[]) => Math.pow(sum(fac1.map((el,i) => Math.pow(fac2[i] - fac1[i], 2))), 0.5);
 
 export const flattenArray = <T>(arrOfArrs: T[][]) => arrOfArrs.reduce((a,b) => a.concat(b), []);
+
+export const taxicabDistance = (fac1: number[], fac2: number[]) => sum(fac1.map((x,i) => Math.abs(fac1[i] - fac2[i])))
