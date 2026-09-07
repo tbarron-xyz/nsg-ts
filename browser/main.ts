@@ -1,7 +1,7 @@
 import NumericalMonoid, { Factorization } from '../NumericalMonoid';
 import { tupleGCD, flattenArray, euclideanDistance, product, taxicabDistance } from '../utils';
 import { makeDisplayMapper } from './orthonormal-basis';
-import { smallestEdgeReparametrization, ReparamSelection } from './smallest-indep-basis';
+import { smallestEdgeReparametrization, reparametrizePoints, ReparamSelection } from './smallest-indep-basis';
 
 declare var Plotly;
 
@@ -27,6 +27,9 @@ window.onload = () => {
         renderPlotly();
     }
     document.getElementById('reparam-checkbox').onchange = e => {
+        renderPlotly();
+    }
+    document.getElementById('polytope-checkbox').onchange = e => {
         renderPlotly();
     }
     document.getElementById("renderTable").onchange = e => {
@@ -262,6 +265,50 @@ const facsMap = (projected: number[][], color: string, text: string[]) => {
 
 const colorMap = i => i == 0 ? "red" : i == 1 ? "blue" : i == 2 ? "green" : "purple";
 
+const polytopeCorners = (element: number, generators: number[]): Factorization[] =>
+    generators.map((g, i) => generators.map((_, j) => j === i ? element / g : 0));
+
+/**
+ * Simplex with corners (element/g_1, 0, ...), ..., (0, ..., element/g_n) that
+ * contains every factorization. Renders its 1-skeleton only: corner markers
+ * plus one lines trace joining every pair of corners (no faces), at 0.2 opacity.
+ */
+const polytopeTraces = (corners: Factorization[], displayCorners: number[][]) => {
+    const color = 'rgba(0, 0, 0, 0.2)';
+    const cornerTrace = {
+        showlegend: false,
+        name: 'containing polytope',
+        x: displayCorners.map(c => c[0]),
+        y: displayCorners.map(c => c[1]),
+        z: displayCorners.map(c => c[2]),
+        text: corners.map(facText),
+        hovertemplate: '%{text}<extra></extra>',
+        mode: 'markers',
+        marker: { size: 5, color: color },
+        type: 'scatter3d'
+    };
+    const pairs: [number, number][] = [];
+    for (let i = 0; i < displayCorners.length; i++) {
+        for (let j = i + 1; j < displayCorners.length; j++) pairs.push([i, j]);
+    }
+    const coord = (dim: number) => pairs.reduce((acc: number[], pair, k) => {
+        const start = displayCorners[pair[0]][dim];
+        const end = displayCorners[pair[1]][dim];
+        return k === 0 ? acc.concat([start, end]) : acc.concat([null, start, end]);
+    }, []);
+    const edgeTrace = {
+        showlegend: false,
+        name: 'containing polytope',
+        x: coord(0),
+        y: coord(1),
+        z: coord(2),
+        mode: 'lines',
+        line: { color: color },
+        type: 'scatter3d'
+    };
+    return [cornerTrace, edgeTrace];
+};
+
 const roundWeight = (w: number) => Math.round(w * 1e9) / 1e9;
 
 /**
@@ -368,18 +415,30 @@ const renderPlotly = (explode = false) => {
         const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
         const reparamChecked = (<HTMLInputElement>document.getElementById("reparam-checkbox")).checked;
         const reparam = reparamChecked ? smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+        const collapse3Checked = (<HTMLInputElement>document.getElementById("collapse3-checkbox")).checked;
+        const polytopeChecked = (<HTMLInputElement>document.getElementById("polytope-checkbox")).checked;
         const projected = reparam
             ? reparam.projected
-            : factorizations.map(fac => projectFactorization(fac, element, generators, (<HTMLInputElement>document.getElementById("collapse3-checkbox")).checked));
+            : factorizations.map(fac => projectFactorization(fac, element, generators, collapse3Checked));
         if (reparam) {
             renderReparamEdges(reparam.origin, reparam.selection);
         } else {
             (<HTMLPreElement>document.getElementById('reparam-edges')).innerHTML = '';
         }
-        const display = applyShift(projected, axisMins(projected));
+        const corners = polytopeChecked && (reparam === null || reparam.origin !== null)
+            ? polytopeCorners(element, generators)
+            : [];
+        const projectedCorners = corners.length === 0
+            ? []
+            : reparam
+                ? reparametrizePoints(corners, reparam.origin, reparam.selection.basis)
+                : corners.map(corner => projectFactorization(corner, element, generators, collapse3Checked));
+        const mins = axisMins(projected.concat(projectedCorners));
+        const display = applyShift(projected, mins);
+        const displayCorners = applyShift(projectedCorners, mins);
         const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
         const minimalMSTTraces = groupedEdgeTracesByDistance(minEdges, distances, display);
-        const globalAxisMax = Math.max(0, ...flattenArray(display));
+        const globalAxisMax = Math.max(0, ...flattenArray(display), ...flattenArray(displayCorners));
         const axisLayout = { range: [0, globalAxisMax] };
         layout = {
             uirevision: 'true', // Keep this value constant on updates
@@ -392,7 +451,7 @@ const renderPlotly = (explode = false) => {
                 zaxis: axisLayout
             }
         };
-        data = [trace1, ...minimalMSTTraces];
+        data = [trace1, ...minimalMSTTraces, ...polytopeTraces(corners, displayCorners)];
     }
 
     const container = document.getElementById('plotly-container') as any;
