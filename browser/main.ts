@@ -1,5 +1,7 @@
 import NumericalMonoid, { Factorization } from '../NumericalMonoid';
 import { tupleGCD, flattenArray, euclideanDistance, product, taxicabDistance } from '../utils';
+import { makeDisplayMapper } from './orthonormal-basis';
+import { smallestEdgeReparametrization, ReparamSelection } from './smallest-indep-basis';
 
 declare var Plotly;
 
@@ -24,8 +26,11 @@ window.onload = () => {
     document.getElementById('collapse3-checkbox').onchange = e => {
         renderPlotly();
     }
-    document.getElementById("renderTable").onchange = e => {
+    document.getElementById('reparam-checkbox').onchange = e => {
         renderPlotly();
+    }
+    document.getElementById("renderTable").onchange = e => {
+        renderCatenaryTable();
     }
     // document.getElementById('explode-button').onclick = e => {
     //     updateStateElement(state.element, true);
@@ -160,7 +165,10 @@ const moveUpOrDownByElement = (generatorIndex: number, up: boolean, currentEleme
 const catenaryDegreePalette = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f'];
 
 const renderCatenaryTable = () => {
-    if (!state.numericalMonoid || !(document.getElementById("renderTable") as HTMLInputElement).checked) return;
+    if (!state.numericalMonoid || !(document.getElementById("renderTable") as HTMLInputElement).checked) {
+        (<HTMLPreElement>document.getElementById('catenary-table')).innerHTML = '';
+        return;
+    }
     const element = state.element;
     const generators = state.numericalMonoid.generators;
     const minGen = Math.min(...generators);
@@ -200,55 +208,6 @@ const renderCatenaryTable = () => {
     (<HTMLPreElement>document.getElementById('catenary-table')).innerHTML = legendLines.concat(lines).join('\n');
 }
 
-/**
- * Create a 4D -> 3D isometric projection for
- *
- *     a*x + b*y + c*z + d*t = n
- *
- * The returned function maps a solution [x,y,z,t] to [X,Y,Z].
- *
- * Distances between points are preserved exactly.
- */
-function makeDisplayMapper([a, b, c, d]: number[], n = 1) {
-  // Orthonormal basis vectors for the hyperplane
-  // a*x + b*y + c*z + d*t = 0
-
-  const ab2 = a * a + b * b;
-  const abc2 = ab2 + c * c;
-  const ab = Math.sqrt(ab2);
-  const abc = Math.sqrt(abc2);
-  const N = Math.sqrt(abc2 + d * d);
-
-  const e1 = [
-    b / ab,
-    -a / ab,
-    0,
-    0
-  ];
-
-  const e2 = [
-    a * c / (ab * abc),
-    b * c / (ab * abc),
-    -ab2 / (ab * abc),
-    0
-  ];
-
-  const e3 = [
-    a * d / (N * abc),
-    b * d / (N * abc),
-    c * d / (N * abc),
-    -abc2 / (N * abc)
-  ];
-
-  return function ([x, y, z, t]: number[]) {
-    return [
-      x * e1[0] + y * e1[1] + z * e1[2] + t * e1[3],
-      x * e2[0] + y * e2[1] + z * e2[2] + t * e2[3],
-      x * e3[0] + y * e3[1] + z * e3[2] + t * e3[3]
-    ];
-  };
-}
-
 const projectFactorization = (fac: Factorization, element: number, generators: number[], collapse3: boolean = false): Factorization => {
     if (generators.length === 3) return [fac[0], fac[1], collapse3 ? 0 : fac[2]];
     if (element === 0) return [0, 0, 0];
@@ -262,6 +221,23 @@ const applyShift = (projected: number[][], mins: number[]) =>
     projected.map(p => [p[0] - mins[0], p[1] - mins[1], p[2] - mins[2]]);
 
 const facText = (fac: Factorization) => '(' + fac.join(', ') + ')';
+
+const renderReparamEdges = (origin: Factorization | null, selection: ReparamSelection) => {
+    const lines: string[] = [];
+    if (origin) {
+        lines.push(`origin = ${facText(origin)}`);
+    }
+    selection.basis.forEach((entry, i) => {
+        const rank = selection.originalRanks[i];
+        const note = rank > i ? `  (${rank + 1 === 3 ? '3rd' : rank + 1 + 'th'} smallest, ${rank - i} dependent skipped)` : '';
+        lines.push(`e${i + 1} = ${facText(entry.diff)}  d = ${Math.round(entry.weight * 100) / 100}${note}`);
+    });
+    if (selection.basis.length < 3) {
+        const dead = [2, 1, 0].slice(3 - selection.basis.length).map(i => `u${i + 1}`).reverse().join(', ');
+        lines.push(`edge differences span ${selection.basis.length}D — ${dead} ≡ 0`);
+    }
+    (<HTMLPreElement>document.getElementById('reparam-edges')).innerHTML = lines.join('\n');
+};
 
 const facsMap = (projected: number[][], color: string, text: string[]) => {
     return {
@@ -353,6 +329,7 @@ const renderPlotly = (explode = false) => {
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+        (<HTMLPreElement>document.getElementById('reparam-edges')).innerHTML = '';
         let minimalMSTTraces = [];
         let aggregateGlobalAxisMax = 0;
         explodedDisplay.forEach((display, i) => {
@@ -385,14 +362,22 @@ const renderPlotly = (explode = false) => {
         const factorizations = state.numericalMonoid.factorizations(state.element);
         const element = state.element;
         const generators = state.numericalMonoid.generators;
-        const projected = factorizations.map(fac => projectFactorization(fac, element, generators, (document.getElementById("collapse3-checkbox") as any).checked));
-        const display = applyShift(projected, axisMins(projected));
-        const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
-
         const metric = metricFunction(state.metric);
         const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
         const minEdges = MST;
         const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+        const reparamChecked = (<HTMLInputElement>document.getElementById("reparam-checkbox")).checked;
+        const reparam = reparamChecked ? smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+        const projected = reparam
+            ? reparam.projected
+            : factorizations.map(fac => projectFactorization(fac, element, generators, (<HTMLInputElement>document.getElementById("collapse3-checkbox")).checked));
+        if (reparam) {
+            renderReparamEdges(reparam.origin, reparam.selection);
+        } else {
+            (<HTMLPreElement>document.getElementById('reparam-edges')).innerHTML = '';
+        }
+        const display = applyShift(projected, axisMins(projected));
+        const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
         const minimalMSTTraces = groupedEdgeTracesByDistance(minEdges, distances, display);
         const globalAxisMax = Math.max(0, ...flattenArray(display));
         const axisLayout = { range: [0, globalAxisMax] };
