@@ -304,9 +304,8 @@ System.register("NumericalMonoid", ["Hash", "utils", "lib/kruskal"], function (e
         }
     };
 });
-System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_6, context_6) {
+System.register("browser/orthonormal-basis", [], function (exports_6, context_6) {
     "use strict";
-    var NumericalMonoid_1, utils_2, MetricType, updateStateElement, persistStateToHash, readStateFromHash, updateMetric, catenaryFunction, metricFunction, state, getInput, getValueOfInput, fourthGeneratorActive, currentGenerators, numericalMonoidOfCurrentInputs, updateGenerators, moveUpOrDownByElement, catenaryDegreePalette, renderCatenaryTable, projectFactorization, axisMins, applyShift, facText, facsMap, colorMap, roundWeight, groupedEdgeTracesByDistance, upByLcmOverG, upByG, renderPlotly;
     var __moduleName = context_6 && context_6.id;
     /**
      * Create a 4D -> 3D isometric projection for
@@ -351,13 +350,179 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
             ];
         };
     }
+    exports_6("makeDisplayMapper", makeDisplayMapper);
+    return {
+        setters: [],
+        execute: function () {
+        }
+    };
+});
+System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, context_7) {
+    "use strict";
+    var utils_2, lexCompare, canonicalDifference, euclideanNorm, centroidClosestFactorization, sortedDistinctEdgeEntries, independentBasisEntries, solveLinearSystem, solveInBasis, reparametrizeBySmallestEdges, smallestEdgeReparametrization;
+    var __moduleName = context_7 && context_7.id;
+    return {
+        setters: [
+            function (utils_2_1) {
+                utils_2 = utils_2_1;
+            }
+        ],
+        execute: function () {
+            lexCompare = (a, b) => {
+                for (let i = 0; i < Math.min(a.length, b.length); i++) {
+                    if (a[i] !== b[i])
+                        return a[i] - b[i];
+                }
+                return a.length - b.length;
+            };
+            canonicalDifference = (fac1, fac2) => {
+                const diff = fac2.map((x, i) => x - fac1[i]);
+                const firstNonzero = diff.find(x => x !== 0);
+                return firstNonzero !== undefined && firstNonzero < 0 ? diff.map(x => -x) : diff;
+            };
+            euclideanNorm = (v) => Math.sqrt(v.reduce((acc, x) => acc + x * x, 0));
+            exports_7("centroidClosestFactorization", centroidClosestFactorization = (factorizations) => {
+                const dims = factorizations[0].length;
+                const centroid = Array.from({ length: dims }, (_, i) => factorizations.reduce((acc, fac) => acc + fac[i], 0) / factorizations.length);
+                let best = factorizations[0];
+                let bestDist = Infinity;
+                factorizations.forEach(fac => {
+                    const dist = Math.sqrt(fac.reduce((acc, x, i) => acc + Math.pow(x - centroid[i], 2), 0));
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = fac;
+                    }
+                });
+                return best;
+            });
+            exports_7("sortedDistinctEdgeEntries", sortedDistinctEdgeEntries = (factorizations, edges, weights) => {
+                const byDifference = new Map();
+                edges.forEach((edge, i) => {
+                    const diff = canonicalDifference(factorizations[edge[0]], factorizations[edge[1]]);
+                    const key = JSON.stringify(diff);
+                    const existing = byDifference.get(key);
+                    if (!existing || weights[i] < existing.weight)
+                        byDifference.set(key, { diff: diff, weight: weights[i] });
+                });
+                return Array.from(byDifference.values())
+                    .sort((a, b) => {
+                    if (a.weight !== b.weight)
+                        return a.weight - b.weight;
+                    const normDelta = euclideanNorm(a.diff) - euclideanNorm(b.diff);
+                    if (normDelta !== 0)
+                        return normDelta;
+                    return lexCompare(a.diff, b.diff);
+                });
+            });
+            exports_7("independentBasisEntries", independentBasisEntries = (entries) => {
+                const basis = [];
+                const originalRanks = [];
+                const ortho = [];
+                for (let rank = 0; rank < entries.length && basis.length < 3; rank++) {
+                    const candidate = entries[rank].diff;
+                    let residual = candidate.slice();
+                    ortho.forEach(q => {
+                        const proj = q.reduce((acc, x, i) => acc + x * candidate[i], 0);
+                        residual = residual.map((x, i) => x - proj * q[i]);
+                    });
+                    const residualNorm = euclideanNorm(residual);
+                    if (residualNorm > 1e-9 * Math.max(1, euclideanNorm(candidate))) {
+                        basis.push(entries[rank]);
+                        originalRanks.push(rank);
+                        ortho.push(residual.map(x => x / residualNorm));
+                    }
+                }
+                return { basis: basis, originalRanks: originalRanks };
+            });
+            solveLinearSystem = (matrix, rhs) => {
+                const n = matrix.length;
+                const scale = Math.max(1, ...matrix.map(row => Math.max(...row.map(Math.abs))));
+                const eps = 1e-9 * scale;
+                const a = matrix.map((row, i) => row.concat([rhs[i]]));
+                for (let col = 0; col < n; col++) {
+                    let pivot = col;
+                    for (let row = col + 1; row < n; row++) {
+                        if (Math.abs(a[row][col]) > Math.abs(a[pivot][col]))
+                            pivot = row;
+                    }
+                    if (Math.abs(a[pivot][col]) < eps)
+                        return null;
+                    const tmp = a[col];
+                    a[col] = a[pivot];
+                    a[pivot] = tmp;
+                    for (let row = 0; row < n; row++) {
+                        if (row === col)
+                            continue;
+                        const factor = a[row][col] / a[col][col];
+                        for (let j = col; j <= n; j++)
+                            a[row][j] -= factor * a[col][j];
+                    }
+                }
+                return a.map((row, i) => row[n] / row[i]);
+            };
+            solveInBasis = (basis, v) => {
+                const u = [0, 0, 0];
+                const active = basis.map((_, i) => i);
+                while (active.length > 0) {
+                    const k = active.length;
+                    const gram = Array.from({ length: k }, () => new Array(k).fill(0));
+                    const proj = new Array(k).fill(0);
+                    for (let dim = 0; dim < v.length; dim++) {
+                        for (let i = 0; i < k; i++) {
+                            proj[i] += basis[active[i]][dim] * v[dim];
+                            for (let j = 0; j < k; j++) {
+                                gram[i][j] += basis[active[i]][dim] * basis[active[j]][dim];
+                            }
+                        }
+                    }
+                    const solution = solveLinearSystem(gram, proj);
+                    if (solution) {
+                        active.forEach((slot, i) => { u[slot] = solution[i]; });
+                        return u;
+                    }
+                    let drop = 0;
+                    for (let i = 1; i < k; i++) {
+                        if (gram[i][i] < gram[drop][drop])
+                            drop = i;
+                    }
+                    active.splice(drop, 1);
+                }
+                return u;
+            };
+            exports_7("reparametrizeBySmallestEdges", reparametrizeBySmallestEdges = (factorizations, basisEntries) => {
+                if (factorizations.length === 0)
+                    return [];
+                const basis = basisEntries.map(entry => entry.diff);
+                const origin = centroidClosestFactorization(factorizations);
+                return factorizations.map(fac => solveInBasis(basis, utils_2.tupleMinus(fac, origin)));
+            });
+            exports_7("smallestEdgeReparametrization", smallestEdgeReparametrization = (factorizations, edges, weights) => {
+                const sortedEntries = sortedDistinctEdgeEntries(factorizations, edges, weights);
+                const selection = independentBasisEntries(sortedEntries);
+                const origin = factorizations.length > 0 ? centroidClosestFactorization(factorizations) : null;
+                const projected = reparametrizeBySmallestEdges(factorizations, selection.basis);
+                return { projected: projected, origin: origin, selection: selection };
+            });
+        }
+    };
+});
+System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonormal-basis", "browser/smallest-indep-basis"], function (exports_8, context_8) {
+    "use strict";
+    var NumericalMonoid_1, utils_3, orthonormal_basis_1, smallest_indep_basis_1, MetricType, updateStateElement, persistStateToHash, readStateFromHash, updateMetric, catenaryFunction, metricFunction, state, getInput, getValueOfInput, fourthGeneratorActive, currentGenerators, numericalMonoidOfCurrentInputs, updateGenerators, moveUpOrDownByElement, catenaryDegreePalette, renderCatenaryTable, projectFactorization, axisMins, applyShift, facText, renderReparamEdges, facsMap, colorMap, roundWeight, groupedEdgeTracesByDistance, upByLcmOverG, upByG, renderPlotly;
+    var __moduleName = context_8 && context_8.id;
     return {
         setters: [
             function (NumericalMonoid_1_1) {
                 NumericalMonoid_1 = NumericalMonoid_1_1;
             },
-            function (utils_2_1) {
-                utils_2 = utils_2_1;
+            function (utils_3_1) {
+                utils_3 = utils_3_1;
+            },
+            function (orthonormal_basis_1_1) {
+                orthonormal_basis_1 = orthonormal_basis_1_1;
+            },
+            function (smallest_indep_basis_1_1) {
+                smallest_indep_basis_1 = smallest_indep_basis_1_1;
             }
         ],
         execute: function () {
@@ -366,7 +531,7 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                 MetricType[MetricType["Euclidean"] = 1] = "Euclidean";
                 MetricType[MetricType["Taxicab"] = 2] = "Taxicab";
             })(MetricType || (MetricType = {}));
-            exports_6("MetricType", MetricType);
+            exports_8("MetricType", MetricType);
             window.onload = () => {
                 [1, 2, 3, 4].map(x => getInput(x)).forEach(x => {
                     x.onchange = updateGenerators;
@@ -387,8 +552,11 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                 document.getElementById('collapse3-checkbox').onchange = e => {
                     renderPlotly();
                 };
-                document.getElementById("renderTable").onchange = e => {
+                document.getElementById('reparam-checkbox').onchange = e => {
                     renderPlotly();
+                };
+                document.getElementById("renderTable").onchange = e => {
+                    renderCatenaryTable();
                 };
                 // document.getElementById('explode-button').onclick = e => {
                 //     updateStateElement(state.element, true);
@@ -477,9 +645,9 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
             metricFunction = (metric) => {
                 switch (metric) {
                     case MetricType.Euclidean:
-                        return utils_2.euclideanDistance;
+                        return utils_3.euclideanDistance;
                     case MetricType.Taxicab:
-                        return utils_2.taxicabDistance;
+                        return utils_3.taxicabDistance;
                     default:
                         return NumericalMonoid_1.default.distanceForClassicCatenary;
                 }
@@ -505,8 +673,10 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
             };
             catenaryDegreePalette = ['#d62728', '#1f77b4', '#2ca02c', '#9467bd', '#ff7f0e', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f'];
             renderCatenaryTable = () => {
-                if (!state.numericalMonoid || !document.getElementById("renderTable").checked)
+                if (!state.numericalMonoid || !document.getElementById("renderTable").checked) {
+                    document.getElementById('catenary-table').innerHTML = '';
                     return;
+                }
                 const element = state.element;
                 const generators = state.numericalMonoid.generators;
                 const minGen = Math.min(...generators);
@@ -549,12 +719,28 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                     return [fac[0], fac[1], collapse3 ? 0 : fac[2]];
                 if (element === 0)
                     return [0, 0, 0];
-                return makeDisplayMapper(generators)(fac);
+                return orthonormal_basis_1.makeDisplayMapper(generators)(fac);
                 // return [fac[1] * generators[1] / element, fac[2] * generators[2] / element, fac[3] * generators[3] / element];
             };
             axisMins = (projected) => [0, 1, 2].map(i => Math.min(0, ...projected.map(p => p[i])));
             applyShift = (projected, mins) => projected.map(p => [p[0] - mins[0], p[1] - mins[1], p[2] - mins[2]]);
             facText = (fac) => '(' + fac.join(', ') + ')';
+            renderReparamEdges = (origin, selection) => {
+                const lines = [];
+                if (origin) {
+                    lines.push(`origin = ${facText(origin)}`);
+                }
+                selection.basis.forEach((entry, i) => {
+                    const rank = selection.originalRanks[i];
+                    const note = rank > i ? `  (${rank + 1 === 3 ? '3rd' : rank + 1 + 'th'} smallest, ${rank - i} dependent skipped)` : '';
+                    lines.push(`e${i + 1} = ${facText(entry.diff)}  d = ${Math.round(entry.weight * 100) / 100}${note}`);
+                });
+                if (selection.basis.length < 3) {
+                    const dead = [2, 1, 0].slice(3 - selection.basis.length).map(i => `u${i + 1}`).reverse().join(', ');
+                    lines.push(`edge differences span ${selection.basis.length}D — ${dead} ≡ 0`);
+                }
+                document.getElementById('reparam-edges').innerHTML = lines.join('\n');
+            };
             facsMap = (projected, color, text) => {
                 return {
                     showlegend: false,
@@ -622,16 +808,17 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                     const factorizations = state.numericalMonoid.factorizations(state.element);
                     const element = state.element;
                     const generators = state.numericalMonoid.generators;
-                    const lcm = utils_2.product(generators);
+                    const lcm = utils_3.product(generators);
                     const exploded = generators.map((g, i) => factorizations.map(y => y.map(upByLcmOverG(i, lcm, g))));
                     const explodedProjected = exploded.map(explodee => explodee.map(fac => projectFactorization(fac, element, generators)));
-                    const mins = axisMins(utils_2.flattenArray(explodedProjected));
+                    const mins = axisMins(utils_3.flattenArray(explodedProjected));
                     const explodedDisplay = explodedProjected.map(projected => applyShift(projected, mins));
                     const traces = explodedDisplay.map((display, i) => facsMap(display, colorMap(i), factorizations.map(facText)));
                     const metric = metricFunction(state.metric);
                     const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
                     const minEdges = MST;
                     const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+                    document.getElementById('reparam-edges').innerHTML = '';
                     let minimalMSTTraces = [];
                     let aggregateGlobalAxisMax = 0;
                     explodedDisplay.forEach((display, i) => {
@@ -646,7 +833,7 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                                 opacity: 0.8
                             }
                         }));
-                        aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, ...utils_2.flattenArray(display));
+                        aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, ...utils_3.flattenArray(display));
                     });
                     const axisLayout = { range: [0, aggregateGlobalAxisMax] };
                     layout = {
@@ -665,15 +852,25 @@ System.register("browser/main", ["NumericalMonoid", "utils"], function (exports_
                     const factorizations = state.numericalMonoid.factorizations(state.element);
                     const element = state.element;
                     const generators = state.numericalMonoid.generators;
-                    const projected = factorizations.map(fac => projectFactorization(fac, element, generators, document.getElementById("collapse3-checkbox").checked));
-                    const display = applyShift(projected, axisMins(projected));
-                    const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
                     const metric = metricFunction(state.metric);
                     const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
                     const minEdges = MST;
                     const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+                    const reparamChecked = document.getElementById("reparam-checkbox").checked;
+                    const reparam = reparamChecked ? smallest_indep_basis_1.smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+                    const projected = reparam
+                        ? reparam.projected
+                        : factorizations.map(fac => projectFactorization(fac, element, generators, document.getElementById("collapse3-checkbox").checked));
+                    if (reparam) {
+                        renderReparamEdges(reparam.origin, reparam.selection);
+                    }
+                    else {
+                        document.getElementById('reparam-edges').innerHTML = '';
+                    }
+                    const display = applyShift(projected, axisMins(projected));
+                    const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
                     const minimalMSTTraces = groupedEdgeTracesByDistance(minEdges, distances, display);
-                    const globalAxisMax = Math.max(0, ...utils_2.flattenArray(display));
+                    const globalAxisMax = Math.max(0, ...utils_3.flattenArray(display));
                     const axisLayout = { range: [0, globalAxisMax] };
                     layout = {
                         uirevision: 'true',
