@@ -124,11 +124,15 @@ const solveInBasis = (basis: Factorization[], v: Factorization): number[] => {
     return u;
 };
 
+export const reparametrizePoints = (points: Factorization[], origin: Factorization, basisEntries: BasisEntry[]): number[][] => {
+    const basis = basisEntries.map(entry => entry.diff);
+    return points.map(p => solveInBasis(basis, tupleMinus(p, origin)));
+};
+
 export const reparametrizeBySmallestEdges = (factorizations: Factorization[], basisEntries: BasisEntry[]): number[][] => {
     if (factorizations.length === 0) return [];
-    const basis = basisEntries.map(entry => entry.diff);
     const origin = centroidClosestFactorization(factorizations);
-    return factorizations.map(fac => solveInBasis(basis, tupleMinus(fac, origin)));
+    return reparametrizePoints(factorizations, origin, basisEntries);
 };
 
 export type ReparamResult = {
