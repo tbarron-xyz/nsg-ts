@@ -359,7 +359,7 @@ System.register("browser/orthonormal-basis", [], function (exports_6, context_6)
 });
 System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, context_7) {
     "use strict";
-    var utils_2, lexCompare, canonicalDifference, euclideanNorm, centroidClosestFactorization, sortedDistinctEdgeEntries, independentBasisEntries, solveLinearSystem, solveInBasis, reparametrizeBySmallestEdges, smallestEdgeReparametrization;
+    var utils_2, lexCompare, canonicalDifference, euclideanNorm, centroidClosestFactorization, sortedDistinctEdgeEntries, independentBasisEntries, solveLinearSystem, solveInBasis, reparametrizePoints, reparametrizeBySmallestEdges, smallestEdgeReparametrization;
     var __moduleName = context_7 && context_7.id;
     return {
         setters: [
@@ -489,12 +489,15 @@ System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, 
                 }
                 return u;
             };
+            exports_7("reparametrizePoints", reparametrizePoints = (points, origin, basisEntries) => {
+                const basis = basisEntries.map(entry => entry.diff);
+                return points.map(p => solveInBasis(basis, utils_2.tupleMinus(p, origin)));
+            });
             exports_7("reparametrizeBySmallestEdges", reparametrizeBySmallestEdges = (factorizations, basisEntries) => {
                 if (factorizations.length === 0)
                     return [];
-                const basis = basisEntries.map(entry => entry.diff);
                 const origin = centroidClosestFactorization(factorizations);
-                return factorizations.map(fac => solveInBasis(basis, utils_2.tupleMinus(fac, origin)));
+                return reparametrizePoints(factorizations, origin, basisEntries);
             });
             exports_7("smallestEdgeReparametrization", smallestEdgeReparametrization = (factorizations, edges, weights) => {
                 const sortedEntries = sortedDistinctEdgeEntries(factorizations, edges, weights);
@@ -508,7 +511,7 @@ System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, 
 });
 System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonormal-basis", "browser/smallest-indep-basis"], function (exports_8, context_8) {
     "use strict";
-    var NumericalMonoid_1, utils_3, orthonormal_basis_1, smallest_indep_basis_1, MetricType, updateStateElement, persistStateToHash, readStateFromHash, updateMetric, catenaryFunction, metricFunction, state, getInput, getValueOfInput, fourthGeneratorActive, currentGenerators, numericalMonoidOfCurrentInputs, updateGenerators, moveUpOrDownByElement, catenaryDegreePalette, renderCatenaryTable, projectFactorization, axisMins, applyShift, facText, renderReparamEdges, facsMap, colorMap, roundWeight, groupedEdgeTracesByDistance, upByLcmOverG, upByG, renderPlotly;
+    var NumericalMonoid_1, utils_3, orthonormal_basis_1, smallest_indep_basis_1, MetricType, updateStateElement, persistStateToHash, readStateFromHash, updateMetric, catenaryFunction, metricFunction, state, getInput, getValueOfInput, fourthGeneratorActive, currentGenerators, numericalMonoidOfCurrentInputs, updateGenerators, moveUpOrDownByElement, catenaryDegreePalette, renderCatenaryTable, projectFactorization, axisMins, applyShift, facText, renderReparamEdges, facsMap, colorMap, polytopeCorners, polytopeTraces, roundWeight, edgeCoordsFromPoints, groupedEdgeTracesByDistance, upByLcmOverG, upByG, ANIMATION_DURATION_MS, easeInOutCubic, lerp, interpolatePoints, lastFrame, animationGeneration, plotReact, sceneLayout, animateMetricTransition, renderPlotly;
     var __moduleName = context_8 && context_8.id;
     return {
         setters: [
@@ -550,9 +553,12 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     };
                 });
                 document.getElementById('collapse3-checkbox').onchange = e => {
-                    renderPlotly();
+                    renderPlotly(false, true);
                 };
                 document.getElementById('reparam-checkbox').onchange = e => {
+                    renderPlotly(false, true);
+                };
+                document.getElementById('polytope-checkbox').onchange = e => {
                     renderPlotly();
                 };
                 document.getElementById("renderTable").onchange = e => {
@@ -607,11 +613,11 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                 state.numericalMonoid = numericalMonoidOfCurrentInputs();
                 updateStateElement(state.element);
             };
-            updateStateElement = (element, explode = false) => {
+            updateStateElement = (element, explode = false, animate = false) => {
                 state.element = element;
                 document.getElementById('element-input').value = element.toString();
                 document.getElementById('catenary-input').value = catenaryFunction(state.numericalMonoid, state.metric)(element).toString();
-                renderPlotly(explode);
+                renderPlotly(explode, animate);
                 renderCatenaryTable();
                 persistStateToHash();
             };
@@ -638,7 +644,7 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
             };
             updateMetric = (metric) => {
                 state.metric = metric;
-                updateStateElement(state.element);
+                updateStateElement(state.element, false, true);
             };
             // const maxnonredFunction = (nm: NumericalMonoid, useEuclidean: boolean) => (useEuclidean ? nm.maxnonreducibleEdgesEuclidean : nm.maxnonreducibleEdges).bind(nm);
             catenaryFunction = (nm, metric) => (x) => nm.catenaryDegreeByMetric(x, metricFunction(metric));
@@ -762,7 +768,54 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                 };
             };
             colorMap = i => i == 0 ? "red" : i == 1 ? "blue" : i == 2 ? "green" : "purple";
+            polytopeCorners = (element, generators) => generators.map((g, i) => generators.map((_, j) => j === i ? element / g : 0));
+            /**
+             * Simplex with corners (element/g_1, 0, ...), ..., (0, ..., element/g_n) that
+             * contains every factorization. Renders its 1-skeleton only: corner markers
+             * plus one lines trace joining every pair of corners (no faces), at 0.2 opacity.
+             */
+            polytopeTraces = (corners, displayCorners) => {
+                const color = 'rgba(0, 0, 0, 0.2)';
+                const cornerTrace = {
+                    showlegend: false,
+                    name: 'containing polytope',
+                    x: displayCorners.map(c => c[0]),
+                    y: displayCorners.map(c => c[1]),
+                    z: displayCorners.map(c => c[2]),
+                    text: corners.map(facText),
+                    hovertemplate: '%{text}<extra></extra>',
+                    mode: 'markers',
+                    marker: { size: 5, color: color },
+                    type: 'scatter3d'
+                };
+                const pairs = [];
+                for (let i = 0; i < displayCorners.length; i++) {
+                    for (let j = i + 1; j < displayCorners.length; j++)
+                        pairs.push([i, j]);
+                }
+                const coord = (dim) => pairs.reduce((acc, pair, k) => {
+                    const start = displayCorners[pair[0]][dim];
+                    const end = displayCorners[pair[1]][dim];
+                    return k === 0 ? acc.concat([start, end]) : acc.concat([null, start, end]);
+                }, []);
+                const edgeTrace = {
+                    showlegend: false,
+                    name: 'containing polytope',
+                    x: coord(0),
+                    y: coord(1),
+                    z: coord(2),
+                    mode: 'lines',
+                    line: { color: color },
+                    type: 'scatter3d'
+                };
+                return [cornerTrace, edgeTrace];
+            };
             roundWeight = (w) => Math.round(w * 1e9) / 1e9;
+            edgeCoordsFromPoints = (edges, display, dim) => edges.reduce((acc, edge, i) => {
+                const start = display[edge[0]][dim];
+                const end = display[edge[1]][dim];
+                return i === 0 ? acc.concat([start, end]) : acc.concat([null, start, end]);
+            }, []);
             /**
              * Group edges into one Plotly trace per distinct distance (measured with the
              * selected metric, classic or euclidean), instead of one anonymous trace per edge.
@@ -770,6 +823,8 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
              * (nulls separate the segments), named `d = <distance>`, so the legend reads
              * distances rather than "trace 0", "trace 1", ...
              * Expects edges in Kruskal order (ascending weight); groups preserve that order.
+             * Returns one { edges, trace } entry per group so callers can rebuild trace
+             * coordinates from (interpolated) point positions via edgeCoordsFromPoints.
              */
             groupedEdgeTracesByDistance = (edges, weights, display, extraProps = {}) => {
                 const groups = [];
@@ -781,27 +836,77 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     else
                         groups.push({ weight: weight, edges: [edge] });
                 });
-                return groups.map(group => {
-                    const coord = (dim) => group.edges.reduce((acc, edge, i) => {
-                        const start = display[edge[0]][dim];
-                        const end = display[edge[1]][dim];
-                        return i === 0 ? acc.concat([start, end]) : acc.concat([null, start, end]);
-                    }, []);
-                    return Object.assign({
+                return groups.map(group => ({
+                    edges: group.edges,
+                    trace: Object.assign({
                         name: `d = ${Math.round(group.weight * 100) / 100}`,
                         legendgroup: String(group.weight),
                         showlegend: true,
-                        x: coord(0),
-                        y: coord(1),
-                        z: coord(2),
+                        x: edgeCoordsFromPoints(group.edges, display, 0),
+                        y: edgeCoordsFromPoints(group.edges, display, 1),
+                        z: edgeCoordsFromPoints(group.edges, display, 2),
                         mode: 'lines',
                         type: 'scatter3d'
-                    }, extraProps);
-                });
+                    }, extraProps),
+                }));
             };
             upByLcmOverG = (i, lcm, g) => (z, j) => j == i ? (z + lcm / g) : z;
             upByG = (i, lcm, g) => (z, j) => z + g;
-            renderPlotly = (explode = false) => {
+            ANIMATION_DURATION_MS = 450;
+            easeInOutCubic = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+            lerp = (a, b, t) => a + (b - a) * t;
+            interpolatePoints = (from, to, t) => from.map((p, i) => [0, 1, 2].map(d => lerp(p[d], to[i][d], t)));
+            lastFrame = null;
+            animationGeneration = 0;
+            plotReact = (data, layout) => {
+                const container = document.getElementById('plotly-container');
+                if (container && container._fullLayout) {
+                    const currentCamera = container._fullLayout.scene && container._fullLayout.scene.camera;
+                    if (currentCamera) {
+                        layout.scene.camera = currentCamera;
+                    }
+                    Plotly.react('plotly-container', data, layout);
+                }
+                else {
+                    Plotly.newPlot('plotly-container', data, layout);
+                }
+            };
+            sceneLayout = (axisMax) => {
+                const axisLayout = { range: [0, axisMax] };
+                return {
+                    uirevision: 'true',
+                    scene: {
+                        aspectmode: "manual",
+                        aspectratio: { x: 1, y: 1, z: 1 },
+                        margin: { l: 0, r: 0, b: 0, t: 0 },
+                        xaxis: axisLayout,
+                        yaxis: axisLayout,
+                        zaxis: axisLayout
+                    }
+                };
+            };
+            /**
+             * Glide the previous render's geometry to the target geometry over
+             * ANIMATION_DURATION_MS, re-plotting via plotReact every frame with an
+             * ease-in-out interpolation of point/corner positions and the axis maximum.
+             * A generation token cancels the loop as soon as any newer render starts.
+             */
+            animateMetricTransition = (generation, from, to, buildFrame) => {
+                const startedAt = performance.now();
+                const step = (now) => {
+                    if (generation !== animationGeneration)
+                        return;
+                    const raw = Math.min(1, (now - startedAt) / ANIMATION_DURATION_MS);
+                    const t = easeInOutCubic(raw);
+                    const frame = buildFrame(interpolatePoints(from.points, to.points, t), interpolatePoints(from.corners, to.corners, t), lerp(from.axisMax, to.axisMax, t));
+                    plotReact(frame.data, frame.layout);
+                    if (raw < 1)
+                        requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            };
+            renderPlotly = (explode = false, animate = false) => {
+                const generation = ++animationGeneration;
                 let data;
                 let layout;
                 if (explode) {
@@ -819,10 +924,10 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     const minEdges = MST;
                     const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
                     document.getElementById('reparam-edges').innerHTML = '';
-                    let minimalMSTTraces = [];
+                    const minimalMSTTraces = [];
                     let aggregateGlobalAxisMax = 0;
                     explodedDisplay.forEach((display, i) => {
-                        minimalMSTTraces = minimalMSTTraces.concat(groupedEdgeTracesByDistance(minEdges, distances, display, {
+                        groupedEdgeTracesByDistance(minEdges, distances, display, {
                             showlegend: i === 0,
                             marker: {
                                 size: 11,
@@ -832,7 +937,7 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                                 },
                                 opacity: 0.8
                             }
-                        }));
+                        }).forEach(group => minimalMSTTraces.push(group.trace));
                         aggregateGlobalAxisMax = Math.max(aggregateGlobalAxisMax, ...utils_3.flattenArray(display));
                     });
                     const axisLayout = { range: [0, aggregateGlobalAxisMax] };
@@ -858,44 +963,67 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
                     const reparamChecked = document.getElementById("reparam-checkbox").checked;
                     const reparam = reparamChecked ? smallest_indep_basis_1.smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+                    const collapse3Checked = document.getElementById("collapse3-checkbox").checked;
+                    const polytopeChecked = document.getElementById("polytope-checkbox").checked;
                     const projected = reparam
                         ? reparam.projected
-                        : factorizations.map(fac => projectFactorization(fac, element, generators, document.getElementById("collapse3-checkbox").checked));
+                        : factorizations.map(fac => projectFactorization(fac, element, generators, collapse3Checked));
                     if (reparam) {
                         renderReparamEdges(reparam.origin, reparam.selection);
                     }
                     else {
                         document.getElementById('reparam-edges').innerHTML = '';
                     }
-                    const display = applyShift(projected, axisMins(projected));
+                    const corners = polytopeChecked && (reparam === null || reparam.origin !== null)
+                        ? polytopeCorners(element, generators)
+                        : [];
+                    const projectedCorners = corners.length === 0
+                        ? []
+                        : reparam
+                            ? smallest_indep_basis_1.reparametrizePoints(corners, reparam.origin, reparam.selection.basis)
+                            : corners.map(corner => projectFactorization(corner, element, generators, collapse3Checked));
+                    const mins = axisMins(projected.concat(projectedCorners));
+                    const display = applyShift(projected, mins);
+                    const displayCorners = applyShift(projectedCorners, mins);
                     const trace1 = facsMap(display, 'rgba(217, 217, 217, 0.14)', factorizations.map(facText));
-                    const minimalMSTTraces = groupedEdgeTracesByDistance(minEdges, distances, display);
-                    const globalAxisMax = Math.max(0, ...utils_3.flattenArray(display));
-                    const axisLayout = { range: [0, globalAxisMax] };
-                    layout = {
-                        uirevision: 'true',
-                        scene: {
-                            aspectmode: "manual",
-                            aspectratio: { x: 1, y: 1, z: 1 },
-                            margin: { l: 0, r: 0, b: 0, t: 0 },
-                            xaxis: axisLayout,
-                            yaxis: axisLayout,
-                            zaxis: axisLayout
-                        }
+                    const minimalMSTGroups = groupedEdgeTracesByDistance(minEdges, distances, display);
+                    const globalAxisMax = Math.max(0, ...utils_3.flattenArray(display), ...utils_3.flattenArray(displayCorners));
+                    const currentFrame = {
+                        points: display,
+                        corners: displayCorners,
+                        edgeGroups: minimalMSTGroups,
+                        axisMax: globalAxisMax
                     };
-                    data = [trace1, ...minimalMSTTraces];
-                }
-                const container = document.getElementById('plotly-container');
-                if (container && container._fullLayout) {
-                    const currentCamera = container._fullLayout.scene && container._fullLayout.scene.camera;
-                    if (currentCamera) {
-                        layout.scene.camera = currentCamera;
+                    data = [trace1, ...minimalMSTGroups.map(group => group.trace), ...polytopeTraces(corners, displayCorners)];
+                    layout = sceneLayout(globalAxisMax);
+                    if (animate && lastFrame !== null
+                        && lastFrame.points.length === display.length
+                        && lastFrame.corners.length === displayCorners.length) {
+                        const buildFrame = (points, cornerPoints, axisMax) => ({
+                            data: [
+                                Object.assign({}, trace1, {
+                                    x: points.map(p => p[0]),
+                                    y: points.map(p => p[1]),
+                                    z: points.map(p => p[2])
+                                }),
+                                ...minimalMSTGroups.map(group => Object.assign({}, group.trace, {
+                                    x: edgeCoordsFromPoints(group.edges, points, 0),
+                                    y: edgeCoordsFromPoints(group.edges, points, 1),
+                                    z: edgeCoordsFromPoints(group.edges, points, 2)
+                                })),
+                                ...polytopeTraces(corners, cornerPoints)
+                            ],
+                            layout: sceneLayout(axisMax)
+                        });
+                        animateMetricTransition(generation, lastFrame, currentFrame, buildFrame);
                     }
-                    Plotly.react('plotly-container', data, layout);
+                    else {
+                        plotReact(data, layout);
+                    }
+                    lastFrame = currentFrame;
+                    return;
                 }
-                else {
-                    Plotly.newPlot('plotly-container', data, layout);
-                }
+                plotReact(data, layout);
             };
         }
     };
