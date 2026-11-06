@@ -27,7 +27,9 @@ window.onload = () => {
         renderPlotly(false, true);
     }
     document.getElementById('reparam-checkbox').onchange = e => {
+        state.basisChange = (<HTMLInputElement>e.target).checked;
         renderPlotly(false, true);
+        persistStateToHash();
     }
     document.getElementById('polytope-checkbox').onchange = e => {
         renderPlotly();
@@ -81,6 +83,7 @@ window.onload = () => {
 
     readStateFromHash();
     (<HTMLInputElement>document.querySelector(`input[name="metric"][value="${state.metric}"]`)).checked = true;
+    (<HTMLInputElement>document.getElementById('reparam-checkbox')).checked = state.basisChange;
     state.numericalMonoid = numericalMonoidOfCurrentInputs();
     updateStateElement(state.element);
 }
@@ -99,6 +102,7 @@ const persistStateToHash = () => {
         `gens=${currentGenerators().join(',')}`,
         `element=${state.element}`,
         state.metric !== MetricType.Classic ? `metric=${MetricType[state.metric].toLowerCase()}` : '',
+        state.basisChange ? `basis-change=1` : '',
     ].filter(x => x !== '').join('&');
     history.replaceState(null, '', `#${params}`);
 }
@@ -109,6 +113,7 @@ const readStateFromHash = () => {
     if (!isNaN(element)) state.element = element;
     const metricParam = params.get('metric');
     if (metricParam === 'euclidean' || metricParam === 'taxicab') state.metric = metricParam === 'euclidean' ? MetricType.Euclidean : MetricType.Taxicab;
+    state.basisChange = params.get('basis-change') !== null;
     (params.get('gens') || '').split(',').map(s => parseInt(s)).forEach((gen, i) => {
         if (!isNaN(gen) && i < 4) getInput(i + 1).value = gen.toString();
     });
@@ -137,11 +142,13 @@ const metricFunction = (metric: MetricType) => {
 const state: {
     numericalMonoid: NumericalMonoid,
     element: number,
-    metric: MetricType
+    metric: MetricType,
+    basisChange: boolean
 } = {
     numericalMonoid: null,
     element: 0,
-    metric: MetricType.Classic
+    metric: MetricType.Classic,
+    basisChange: false
 };
 
 const getInput = (id: number) => <HTMLInputElement>document.getElementById(`input${id}`);
@@ -487,11 +494,20 @@ const renderPlotly = (explode = false, animate = false) => {
         const element = state.element;
         const generators = state.numericalMonoid.generators;
         const metric = metricFunction(state.metric);
-        const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
-        const minEdges = MST;
-        const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+        let minEdges = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
+        let distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
         const reparamChecked = (<HTMLInputElement>document.getElementById("reparam-checkbox")).checked;
-        const reparam = reparamChecked ? smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+        let reparam = reparamChecked ? smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+        if (reparam) {
+            // Single re-run: re-order the candidate edges so Kruskal considers the
+            // chosen basis vectors first (its sort is stable, so input order breaks
+            // weight ties), then re-derive the basis from the resulting MST.
+            const prioritizedMst = state.numericalMonoid.minimalSpanningTreeByMetric(
+                state.element, metric, reparam.selection.basis.map(entry => entry.diff));
+            minEdges = prioritizedMst;
+            distances = prioritizedMst.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+            reparam = smallestEdgeReparametrization(factorizations, prioritizedMst, distances);
+        }
         const collapse3Checked = (<HTMLInputElement>document.getElementById("collapse3-checkbox")).checked;
         const polytopeChecked = (<HTMLInputElement>document.getElementById("polytope-checkbox")).checked;
         const projected = reparam

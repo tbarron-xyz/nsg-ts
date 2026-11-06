@@ -1,5 +1,5 @@
 import { Factorization } from '../NumericalMonoid';
-import { tupleMinus } from '../utils';
+import { tupleMinus, canonicalDifference } from '../utils';
 
 export type BasisEntry = { diff: Factorization, weight: number };
 
@@ -10,12 +10,6 @@ const lexCompare = (a: number[], b: number[]) => {
         if (a[i] !== b[i]) return a[i] - b[i];
     }
     return a.length - b.length;
-};
-
-const canonicalDifference = (fac1: Factorization, fac2: Factorization): Factorization => {
-    const diff = fac2.map((x, i) => x - fac1[i]);
-    const firstNonzero = diff.find(x => x !== 0);
-    return firstNonzero !== undefined && firstNonzero < 0 ? diff.map(x => -x) : diff;
 };
 
 const euclideanNorm = (v: number[]) => Math.sqrt(v.reduce((acc, x) => acc + x * x, 0));

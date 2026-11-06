@@ -18,3 +18,9 @@ export const euclideanDistance = (fac1: number[], fac2: number[]) => Math.pow(su
 export const flattenArray = <T>(arrOfArrs: T[][]) => arrOfArrs.reduce((a,b) => a.concat(b), []);
 
 export const taxicabDistance = (fac1: number[], fac2: number[]) => sum(fac1.map((x,i) => Math.abs(fac1[i] - fac2[i])))
+
+export const canonicalDifference = (fac1: number[], fac2: number[]): number[] => {
+    const diff = fac2.map((x, i) => x - fac1[i]);
+    const firstNonzero = diff.find(x => x !== 0);
+    return firstNonzero !== undefined && firstNonzero < 0 ? diff.map(x => -x) : diff;
+};

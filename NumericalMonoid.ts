@@ -2,7 +2,7 @@
 import cytoscape = require('cytoscape');
 
 import { JSONHashSet, HashSet } from './Hash';
-import { zeroThroughN, addOneAtIndex, tupleMinus, tupleGCD, sum, euclideanDistance, flattenArray, product, numberArrayEqualityCheck } from './utils';
+import { zeroThroughN, addOneAtIndex, tupleMinus, tupleGCD, sum, euclideanDistance, flattenArray, product, numberArrayEqualityCheck, canonicalDifference } from './utils';
 
 // / <reference path="kruskal.d.ts" />
 import { Kruskal } from './lib/kruskal';
@@ -80,13 +80,24 @@ export default class NumericalMonoid {
         // Math.max(...bettiElements)
     }
 
-    minimalSpanningTreeByMetric(n: number, metric: Metric): MSTAsIndices {
+    /**
+     * Computes the MST over the candidate edges of n. When prioritizedDiffs is
+     * non-empty, candidate edges whose canonicalized factorization difference
+     * matches one of those diffs are placed first in the edge list handed to
+     * Kruskal, so weight ties are broken in their favor (Kruskal's sort is
+     * stable, so its tie-breaking follows input order). Prioritized runs are
+     * not cached; sub-MSTs computed recursively stay in the plain cache.
+     */
+    minimalSpanningTreeByMetric(n: number, metric: Metric, prioritizedDiffs: Factorization[] = []): MSTAsIndices {
         // Returns a list of pairs of indices pointing to factorizations within this.factorizations
         // Is dynamic
-        if (this.cachedMSTsByMetric.has(metric)) {
-            const metricCache = this.cachedMSTsByMetric.get(metric);
-            if (metricCache.has(n)) {
-                return metricCache.get(n);
+        const prioritized = prioritizedDiffs.length > 0;
+        if (!prioritized) {
+            if (this.cachedMSTsByMetric.has(metric)) {
+                const metricCache = this.cachedMSTsByMetric.get(metric);
+                if (metricCache.has(n)) {
+                    return metricCache.get(n);
+                }
             }
         }
         const factorizations = this.factorizations(n);
@@ -118,9 +129,23 @@ export default class NumericalMonoid {
                 .reduce((a, b) => a.concat(b), []);
         }
         const vertices = zeroThroughN(factorizations.length);
-        const mstAsIndexPairs = Kruskal.kruskal(vertices, edges, (index1, index2) => metric(factorizations[index1], factorizations[index2]));
-        const metricCache = (this.cachedMSTsByMetric.get(metric) || this.cachedMSTsByMetric.set(metric, new Map()).get(metric));
-        metricCache.set(n, mstAsIndexPairs);
+        let orderedEdges = edges;
+        if (prioritized) {
+            const diffKeys = prioritizedDiffs.map(diff => JSON.stringify(diff));
+            orderedEdges = edges
+                .map((edge, order) => ({
+                    edge: edge,
+                    rank: diffKeys.indexOf(JSON.stringify(canonicalDifference(factorizations[edge[0]], factorizations[edge[1]]))),
+                    order: order
+                }))
+                .sort((a, b) => (a.rank - b.rank) || (a.order - b.order))
+                .map(x => x.edge);
+        }
+        const mstAsIndexPairs = Kruskal.kruskal(vertices, orderedEdges, (index1, index2) => metric(factorizations[index1], factorizations[index2]));
+        if (!prioritized) {
+            const metricCache = (this.cachedMSTsByMetric.get(metric) || this.cachedMSTsByMetric.set(metric, new Map()).get(metric));
+            metricCache.set(n, mstAsIndexPairs);
+        }
         return mstAsIndexPairs;
     }
 

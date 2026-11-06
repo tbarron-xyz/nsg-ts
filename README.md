@@ -7,8 +7,8 @@ A TypeScript library for computational algebra focused on numerical monoids (als
 ## Features
 
 - **Factorizations and Membership**: Compute all ways to express numbers as sums of generators, and check membership in the monoid.
-- **Frobenius Number**: Find the largest number not in the monoid.
-- **Betti Elements**: Identify elements with disconnected factorization graphs.
+<!-- - **Frobenius Number**: Find the largest number not in the monoid. -->
+<!-- - **Betti Elements**: Identify elements with disconnected factorization graphs. -->
 - **Catenary Degrees**: Calculate the minimum distance to connect all factorizations via graph metrics (e.g., Euclidean or "classic catenary" distance).
 - **Minimal Spanning Trees**: Use Kruskal's algorithm to compute MSTs for factorization graphs.
 - **Graph Visualization**: Integrates with Cytoscape for graph-based computations.
@@ -89,27 +89,9 @@ console.log(satisfiesBound); // true or false
 
 - `NumericalMonoid.distanceForClassicCatenary(fac1: Factorization, fac2: Factorization): number`: Classic catenary distance.
 
-## Dependencies
-
-- **cytoscape**: ^3.2.20 (graph library for connectivity checks)
-- **typescript**: ^3.1.1 (compilation)
-- Custom: `tsm` (matrix operations, included in lib/)
-
-**Note**: Dependencies are outdated. For modern use, update to TypeScript 5+, Cytoscape 3.28+, and consider adding testing frameworks like Jest.
 
 ## Development
 
 - Build: `npm run build` (compiles TypeScript)
 - Serve docs/browser: `npm run serve`
 - No tests currently implemented; add `npm test` with a framework like Jest.
-
-## Background and References
-
-This library is for research in commutative algebra and number theory. Numerical monoids are studied for their factorization properties, with applications in cryptography and coding theory.
-
-- **Related Concepts**: Frobenius numbers, catenary degrees (introduced by S.T. Chapman), Betti elements.
-- **Papers and Researchers**: Key contributors include J.C. Rosales and P.A. García-Sánchez (e.g., "Numerical Semigroups" book), J.I. García-García, A. Assi, and others in the semigroup theory community. See works on catenary degrees by S.T. Chapman and computational aspects by the Granada semigroup group.
-
-## Contributing
-
-Fork the repo, make changes, and submit a PR. Ensure compatibility with modern TypeScript.
