@@ -43,7 +43,7 @@ System.register("Hash", [], function (exports_1, context_1) {
 });
 System.register("utils", [], function (exports_2, context_2) {
     "use strict";
-    var zeroThroughN, addOneAtIndex, tupleGCD, tupleMinus, sum, product, numberArrayEqualityCheck, euclideanDistance, flattenArray, taxicabDistance;
+    var zeroThroughN, addOneAtIndex, tupleGCD, tupleMinus, sum, product, numberArrayEqualityCheck, euclideanDistance, flattenArray, taxicabDistance, canonicalDifference;
     var __moduleName = context_2 && context_2.id;
     return {
         setters: [],
@@ -62,6 +62,11 @@ System.register("utils", [], function (exports_2, context_2) {
             exports_2("euclideanDistance", euclideanDistance = (fac1, fac2) => Math.pow(sum(fac1.map((el, i) => Math.pow(fac2[i] - fac1[i], 2))), 0.5));
             exports_2("flattenArray", flattenArray = (arrOfArrs) => arrOfArrs.reduce((a, b) => a.concat(b), []));
             exports_2("taxicabDistance", taxicabDistance = (fac1, fac2) => sum(fac1.map((x, i) => Math.abs(fac1[i] - fac2[i]))));
+            exports_2("canonicalDifference", canonicalDifference = (fac1, fac2) => {
+                const diff = fac2.map((x, i) => x - fac1[i]);
+                const firstNonzero = diff.find(x => x !== 0);
+                return firstNonzero !== undefined && firstNonzero < 0 ? diff.map(x => -x) : diff;
+            });
         }
     };
 });
@@ -235,13 +240,24 @@ System.register("NumericalMonoid", ["Hash", "utils", "lib/kruskal"], function (e
                     return Math.min(...this.generators) * Math.max(...this.generators);
                     // Math.max(...bettiElements)
                 }
-                minimalSpanningTreeByMetric(n, metric) {
+                /**
+                 * Computes the MST over the candidate edges of n. When prioritizedDiffs is
+                 * non-empty, candidate edges whose canonicalized factorization difference
+                 * matches one of those diffs are placed first in the edge list handed to
+                 * Kruskal, so weight ties are broken in their favor (Kruskal's sort is
+                 * stable, so its tie-breaking follows input order). Prioritized runs are
+                 * not cached; sub-MSTs computed recursively stay in the plain cache.
+                 */
+                minimalSpanningTreeByMetric(n, metric, prioritizedDiffs = []) {
                     // Returns a list of pairs of indices pointing to factorizations within this.factorizations
                     // Is dynamic
-                    if (this.cachedMSTsByMetric.has(metric)) {
-                        const metricCache = this.cachedMSTsByMetric.get(metric);
-                        if (metricCache.has(n)) {
-                            return metricCache.get(n);
+                    const prioritized = prioritizedDiffs.length > 0;
+                    if (!prioritized) {
+                        if (this.cachedMSTsByMetric.has(metric)) {
+                            const metricCache = this.cachedMSTsByMetric.get(metric);
+                            if (metricCache.has(n)) {
+                                return metricCache.get(n);
+                            }
                         }
                     }
                     const factorizations = this.factorizations(n);
@@ -274,9 +290,23 @@ System.register("NumericalMonoid", ["Hash", "utils", "lib/kruskal"], function (e
                             .reduce((a, b) => a.concat(b), []);
                     }
                     const vertices = utils_1.zeroThroughN(factorizations.length);
-                    const mstAsIndexPairs = kruskal_1.Kruskal.kruskal(vertices, edges, (index1, index2) => metric(factorizations[index1], factorizations[index2]));
-                    const metricCache = (this.cachedMSTsByMetric.get(metric) || this.cachedMSTsByMetric.set(metric, new Map()).get(metric));
-                    metricCache.set(n, mstAsIndexPairs);
+                    let orderedEdges = edges;
+                    if (prioritized) {
+                        const diffKeys = prioritizedDiffs.map(diff => JSON.stringify(diff));
+                        orderedEdges = edges
+                            .map((edge, order) => ({
+                            edge: edge,
+                            rank: diffKeys.indexOf(JSON.stringify(utils_1.canonicalDifference(factorizations[edge[0]], factorizations[edge[1]]))),
+                            order: order
+                        }))
+                            .sort((a, b) => (a.rank - b.rank) || (a.order - b.order))
+                            .map(x => x.edge);
+                    }
+                    const mstAsIndexPairs = kruskal_1.Kruskal.kruskal(vertices, orderedEdges, (index1, index2) => metric(factorizations[index1], factorizations[index2]));
+                    if (!prioritized) {
+                        const metricCache = (this.cachedMSTsByMetric.get(metric) || this.cachedMSTsByMetric.set(metric, new Map()).get(metric));
+                        metricCache.set(n, mstAsIndexPairs);
+                    }
                     return mstAsIndexPairs;
                 }
                 catenaryDegreeByMetric(n, metric) {
@@ -359,7 +389,7 @@ System.register("browser/orthonormal-basis", [], function (exports_6, context_6)
 });
 System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, context_7) {
     "use strict";
-    var utils_2, lexCompare, canonicalDifference, euclideanNorm, centroidClosestFactorization, sortedDistinctEdgeEntries, independentBasisEntries, solveLinearSystem, solveInBasis, reparametrizePoints, reparametrizeBySmallestEdges, smallestEdgeReparametrization;
+    var utils_2, lexCompare, euclideanNorm, centroidClosestFactorization, sortedDistinctEdgeEntries, independentBasisEntries, solveLinearSystem, solveInBasis, reparametrizePoints, reparametrizeBySmallestEdges, smallestEdgeReparametrization;
     var __moduleName = context_7 && context_7.id;
     return {
         setters: [
@@ -374,11 +404,6 @@ System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, 
                         return a[i] - b[i];
                 }
                 return a.length - b.length;
-            };
-            canonicalDifference = (fac1, fac2) => {
-                const diff = fac2.map((x, i) => x - fac1[i]);
-                const firstNonzero = diff.find(x => x !== 0);
-                return firstNonzero !== undefined && firstNonzero < 0 ? diff.map(x => -x) : diff;
             };
             euclideanNorm = (v) => Math.sqrt(v.reduce((acc, x) => acc + x * x, 0));
             exports_7("centroidClosestFactorization", centroidClosestFactorization = (factorizations) => {
@@ -398,7 +423,7 @@ System.register("browser/smallest-indep-basis", ["utils"], function (exports_7, 
             exports_7("sortedDistinctEdgeEntries", sortedDistinctEdgeEntries = (factorizations, edges, weights) => {
                 const byDifference = new Map();
                 edges.forEach((edge, i) => {
-                    const diff = canonicalDifference(factorizations[edge[0]], factorizations[edge[1]]);
+                    const diff = utils_2.canonicalDifference(factorizations[edge[0]], factorizations[edge[1]]);
                     const key = JSON.stringify(diff);
                     const existing = byDifference.get(key);
                     if (!existing || weights[i] < existing.weight)
@@ -556,7 +581,9 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     renderPlotly(false, true);
                 };
                 document.getElementById('reparam-checkbox').onchange = e => {
+                    state.basisChange = e.target.checked;
                     renderPlotly(false, true);
+                    persistStateToHash();
                 };
                 document.getElementById('polytope-checkbox').onchange = e => {
                     renderPlotly();
@@ -610,6 +637,7 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                 });
                 readStateFromHash();
                 document.querySelector(`input[name="metric"][value="${state.metric}"]`).checked = true;
+                document.getElementById('reparam-checkbox').checked = state.basisChange;
                 state.numericalMonoid = numericalMonoidOfCurrentInputs();
                 updateStateElement(state.element);
             };
@@ -626,6 +654,7 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     `gens=${currentGenerators().join(',')}`,
                     `element=${state.element}`,
                     state.metric !== MetricType.Classic ? `metric=${MetricType[state.metric].toLowerCase()}` : '',
+                    state.basisChange ? `basis-change=1` : '',
                 ].filter(x => x !== '').join('&');
                 history.replaceState(null, '', `#${params}`);
             };
@@ -637,6 +666,7 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                 const metricParam = params.get('metric');
                 if (metricParam === 'euclidean' || metricParam === 'taxicab')
                     state.metric = metricParam === 'euclidean' ? MetricType.Euclidean : MetricType.Taxicab;
+                state.basisChange = params.get('basis-change') !== null;
                 (params.get('gens') || '').split(',').map(s => parseInt(s)).forEach((gen, i) => {
                     if (!isNaN(gen) && i < 4)
                         getInput(i + 1).value = gen.toString();
@@ -661,7 +691,8 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
             state = {
                 numericalMonoid: null,
                 element: 0,
-                metric: MetricType.Classic
+                metric: MetricType.Classic,
+                basisChange: false
             };
             getInput = (id) => document.getElementById(`input${id}`);
             getValueOfInput = (id) => parseInt(getInput(id).value);
@@ -958,11 +989,19 @@ System.register("browser/main", ["NumericalMonoid", "utils", "browser/orthonorma
                     const element = state.element;
                     const generators = state.numericalMonoid.generators;
                     const metric = metricFunction(state.metric);
-                    const MST = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
-                    const minEdges = MST;
-                    const distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+                    let minEdges = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric);
+                    let distances = minEdges.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
                     const reparamChecked = document.getElementById("reparam-checkbox").checked;
-                    const reparam = reparamChecked ? smallest_indep_basis_1.smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+                    let reparam = reparamChecked ? smallest_indep_basis_1.smallestEdgeReparametrization(factorizations, minEdges, distances) : null;
+                    if (reparam) {
+                        // Single re-run: re-order the candidate edges so Kruskal considers the
+                        // chosen basis vectors first (its sort is stable, so input order breaks
+                        // weight ties), then re-derive the basis from the resulting MST.
+                        const prioritizedMst = state.numericalMonoid.minimalSpanningTreeByMetric(state.element, metric, reparam.selection.basis.map(entry => entry.diff));
+                        minEdges = prioritizedMst;
+                        distances = prioritizedMst.map(([index1, index2]) => metric(factorizations[index1], factorizations[index2]));
+                        reparam = smallest_indep_basis_1.smallestEdgeReparametrization(factorizations, prioritizedMst, distances);
+                    }
                     const collapse3Checked = document.getElementById("collapse3-checkbox").checked;
                     const polytopeChecked = document.getElementById("polytope-checkbox").checked;
                     const projected = reparam
